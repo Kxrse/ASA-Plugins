@@ -10,7 +10,7 @@
 | Plugin | Status | Description |
 |---|---|---|
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a MariaDB database across a cluster |
-| More plugins | 🔜 Coming Soon | See the [Coming Soon](Coming%20Soon/) folder |
+| More plugins | Coming Soon | See the [Coming Soon](Coming%20Soon/) folder |
 
 ---
 
