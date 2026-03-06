@@ -281,7 +281,7 @@ static void UpsertSurvivor(const std::string& eosId,
         "VALUES ('%s', '%s', %llu, %s, %s, '%s') "
         "ON DUPLICATE KEY UPDATE "
         "  survivor_name = VALUES(survivor_name),"
-        "  survivor_id   = VALUES(survivor_id),"
+        "  survivor_id   = IF(VALUES(survivor_id) = 0, survivor_id, VALUES(survivor_id)),"
         "  tribe_name    = VALUES(tribe_name),"
         "  tribe_id      = VALUES(tribe_id);",
         e_eos.c_str(), e_name.c_str(),
