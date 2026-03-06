@@ -1,6 +1,6 @@
 # ASA-Plugins
 
-> Custom C++ plugins for **ARK: Survival Ascended** built on the [AsaApi / DevAPI](https://github.com/ServersHub/ServerAPI) framework.  
+> Custom C++ plugins for **ARK: Survival Ascended**  (ASA) built on the [AsaApi / DevAPI](https://github.com/ServersHub/ServerAPI) framework.  
 > Author: **Kxrse** - Non-Commercial, attribution required. See [LICENSE.txt](LICENSE.txt).
 
 ---
