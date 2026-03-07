@@ -1,0 +1,7 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "db_username",
+    "DbPassword": "db_password",
+    "DbName": "db_name"
+}
