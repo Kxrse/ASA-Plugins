@@ -1,0 +1,17 @@
+SurvivorStats - Stat Triggers
+==============================
+
+survivor_level - Your character levels up
+survivor_kills - You kill another player
+survivor_kills_mounted - You kill another player while riding a dino
+survivor_kills_victim_mounted - You kill another player who is riding a dino
+deaths_by_survivor - You are killed by another player
+deaths_by_survivor_mounted - You are killed by a player who is riding a dino
+deaths_while_mounted - You are killed by a player while you are riding a dino
+wild_dino_kills - You kill a wild dino
+wild_dino_kills_mounted - You kill a wild dino while riding a dino
+tamed_dino_kills - You kill a tamed dino
+tamed_dino_kills_mounted - You kill a tamed dino while riding a dino
+deaths_by_wild_dino - You are killed by a wild dino
+deaths_by_wild_dino_while_mounted - You are killed by a wild dino while riding a dino
+deaths_by_tamed_dino - You are killed by a tamed dino with no rider

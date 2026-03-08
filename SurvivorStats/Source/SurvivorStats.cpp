@@ -14,7 +14,7 @@ Commercial use or resale is not permitted without explicit permission.
  * SurvivorStats - ASA Plugin
  *
  * Tables:
- *   survivor_stats — PK (eos_id, survivor_id), tracks per-character stats
+ *   pvpve_stats — PK (eos_id, survivor_id), tracks per-character stats
  *   tribe_stats    — reserved, no columns yet
  *
  * Hooks:
@@ -23,6 +23,21 @@ Commercial use or resale is not permitted without explicit permission.
  *   AShooterPlayerController.ClientNotifyLevelUp(APrimalCharacter*,int)   — updates level
  *   AShooterCharacter.Die(float,FDamageEvent&,AController*,AActor*)       — player kills/deaths
  *   APrimalDinoCharacter.Die(float,FDamageEvent&,AController*,AActor*)    — dino kills
+ *
+ * pvpve_stats columns:
+ *   survivor_kills                    — killed a player
+ *   survivor_kills_mounted            — killed a player while you were mounted
+ *   survivor_kills_victim_mounted     — killed a player who was mounted
+ *   deaths_by_survivor                — killed by a player
+ *   deaths_by_survivor_mounted        — killed by a player who was mounted
+ *   deaths_while_mounted              — you were mounted when killed by a player
+ *   wild_dino_kills                   — killed a wild dino
+ *   wild_dino_kills_mounted           — killed a wild dino while mounted
+ *   tamed_dino_kills                  — killed a tamed dino
+ *   tamed_dino_kills_mounted          — killed a tamed dino while mounted
+ *   deaths_by_wild_dino               — killed by a wild dino
+ *   deaths_by_wild_dino_while_mounted — killed by a wild dino while you were mounted
+ *   deaths_by_tamed_dino              — killed by a tamed dino (no rider)
  */
 
 #include <API/ARK/Ark.h>
@@ -45,10 +60,10 @@ typedef char** MYSQL_ROW;
 typedef MYSQL* (__stdcall* mysql_init_t)             (MYSQL*);
 typedef MYSQL* (__stdcall* mysql_real_connect_t)     (MYSQL*, const char*, const char*, const char*, const char*, unsigned int, const char*, unsigned long);
 typedef void(__stdcall* mysql_close_t)            (MYSQL*);
-typedef int(__stdcall* mysql_query_t)            (MYSQL*, const char*);
-typedef MYSQL_RES* (__stdcall* mysql_store_result_t)     (MYSQL*);
+typedef int(__stdcall* mysql_query_t)             (MYSQL*, const char*);
+typedef MYSQL_RES* (__stdcall* mysql_store_result_t) (MYSQL*);
 typedef void(__stdcall* mysql_free_result_t)      (MYSQL_RES*);
-typedef const char* (__stdcall* mysql_error_t)            (MYSQL*);
+typedef const char* (__stdcall* mysql_error_t)       (MYSQL*);
 typedef unsigned long(__stdcall* mysql_real_escape_string_t)(MYSQL*, char*, const char*, unsigned long);
 typedef int(__stdcall* mysql_options_t)          (MYSQL*, int, const void*);
 
@@ -215,15 +230,24 @@ static bool InitDatabase()
         return false;
     }
 
-    const char* survivor_stats_ddl =
-        "CREATE TABLE IF NOT EXISTS survivor_stats ("
-        "  eos_id              VARCHAR(128)    NOT NULL,"
-        "  survivor_id         BIGINT UNSIGNED NOT NULL DEFAULT 0,"
-        "  survivor_level      INT UNSIGNED    NOT NULL DEFAULT 1,"
-        "  survivor_kills      INT UNSIGNED    NOT NULL DEFAULT 0,"
-        "  deaths_by_survivor  INT UNSIGNED    NOT NULL DEFAULT 0,"
-        "  dino_kills          INT UNSIGNED    NOT NULL DEFAULT 0,"
-        "  deaths_by_dino      INT UNSIGNED    NOT NULL DEFAULT 0,"
+    const char* pvpve_stats_ddl =
+        "CREATE TABLE IF NOT EXISTS pvpve_stats ("
+        "  eos_id                              VARCHAR(128)    NOT NULL,"
+        "  survivor_id                         BIGINT UNSIGNED NOT NULL DEFAULT 0,"
+        "  survivor_level                      INT UNSIGNED    NOT NULL DEFAULT 1,"
+        "  survivor_kills                      INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  survivor_kills_mounted              INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  survivor_kills_victim_mounted       INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  deaths_by_survivor                  INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  deaths_by_survivor_mounted          INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  deaths_while_mounted                INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  wild_dino_kills                     INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  wild_dino_kills_mounted             INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  tamed_dino_kills                    INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  tamed_dino_kills_mounted            INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  deaths_by_wild_dino                 INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  deaths_by_wild_dino_while_mounted   INT UNSIGNED    NOT NULL DEFAULT 0,"
+        "  deaths_by_tamed_dino                INT UNSIGNED    NOT NULL DEFAULT 0,"
         "  PRIMARY KEY (eos_id, survivor_id)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
@@ -233,7 +257,7 @@ static bool InitDatabase()
         "  PRIMARY KEY (tribe_id)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
 
-    if (!ExecQuery(survivor_stats_ddl) || !ExecQuery(tribe_stats_ddl))
+    if (!ExecQuery(pvpve_stats_ddl) || !ExecQuery(tribe_stats_ddl))
     {
         Log::GetLog()->error("[SurvivorStats] Failed to create tables");
         return false;
@@ -259,7 +283,7 @@ static void UpsertSurvivorLevel(const std::string& eosId, uint64_t survivorId, i
 
     char sql[256]{};
     std::snprintf(sql, sizeof(sql),
-        "INSERT INTO survivor_stats (eos_id, survivor_id, survivor_level) "
+        "INSERT INTO pvpve_stats (eos_id, survivor_id, survivor_level) "
         "VALUES ('%s', %llu, %d) "
         "ON DUPLICATE KEY UPDATE survivor_level = VALUES(survivor_level);",
         e_eos.c_str(), (unsigned long long)survivorId, level);
@@ -278,7 +302,7 @@ static void IncrementCounter(const std::string& eosId, uint64_t survivorId, cons
 
     char sql[512]{};
     std::snprintf(sql, sizeof(sql),
-        "INSERT INTO survivor_stats (eos_id, survivor_id, %s) "
+        "INSERT INTO pvpve_stats (eos_id, survivor_id, %s) "
         "VALUES ('%s', %llu, 1) "
         "ON DUPLICATE KEY UPDATE %s = %s + 1;",
         column,
@@ -329,6 +353,18 @@ static std::string GetEosIdFromController(AController* controller)
     return (eosId == "unknown") ? "" : eosId;
 }
 
+static bool IsCharacterMounted(AShooterCharacter* ch)
+{
+    if (!ch) return false;
+    return ch->RidingDinoField() != nullptr;
+}
+
+static bool DinoHasRider(APrimalDinoCharacter* dino)
+{
+    if (!dino) return false;
+    return dino->RiderField() != nullptr;
+}
+
 // =============================================================================
 // Hook Type Aliases
 // =============================================================================
@@ -339,11 +375,11 @@ using ClientNotifyLevelUp_t = void(*)(AShooterPlayerController*, APrimalCharacte
 using ShooterCharacterDie_t = void(*)(AShooterCharacter*, float, FDamageEvent&, AController*, AActor*);
 using DinoDie_t = bool(*)(APrimalDinoCharacter*, float, FDamageEvent&, AController*, AActor*);
 
-static StartNewShooterPlayer_t Original_StartNewShooterPlayer = nullptr;
-static HandleRespawned_t       Original_HandleRespawned = nullptr;
-static ClientNotifyLevelUp_t   Original_ClientNotifyLevelUp = nullptr;
-static ShooterCharacterDie_t   Original_ShooterCharacterDie = nullptr;
-static DinoDie_t               Original_DinoDie = nullptr;
+static StartNewShooterPlayer_t  Original_StartNewShooterPlayer = nullptr;
+static HandleRespawned_t        Original_HandleRespawned = nullptr;
+static ClientNotifyLevelUp_t    Original_ClientNotifyLevelUp = nullptr;
+static ShooterCharacterDie_t    Original_ShooterCharacterDie = nullptr;
+static DinoDie_t                Original_DinoDie = nullptr;
 
 // =============================================================================
 // Detours
@@ -433,7 +469,7 @@ void Detour_HandleRespawned(AShooterPlayerController* pc, APawn* pawn, bool newP
 
 void Detour_ClientNotifyLevelUp(AShooterPlayerController* pc,
     APrimalCharacter* forChar,
-    int                       newLevel)
+    int               newLevel)
 {
     Original_ClientNotifyLevelUp(pc, forChar, newLevel);
 
@@ -457,13 +493,14 @@ void Detour_ClientNotifyLevelUp(AShooterPlayerController* pc,
 }
 
 void Detour_ShooterCharacterDie(AShooterCharacter* victim,
-    float              damage,
+    float         damage,
     FDamageEvent& damageEvent,
     AController* killer,
     AActor* damageCauser)
 {
     std::string victimEosId;
     uint64_t    victimSurvivorId = 0;
+    bool        victimIsMounted = false;
 
     if (victim)
     {
@@ -477,6 +514,7 @@ void Detour_ShooterCharacterDie(AShooterCharacter* victim,
             if (victimEosId == "unknown") victimEosId = "";
             victimSurvivorId = GetCachedSurvivorId(victimEosId);
         }
+        victimIsMounted = IsCharacterMounted(victim);
     }
 
     const bool killerIsPlayer = killer && killer->IsA(AShooterPlayerController::StaticClass());
@@ -485,10 +523,29 @@ void Detour_ShooterCharacterDie(AShooterCharacter* victim,
 
     std::string killerEosId;
     uint64_t    killerSurvivorId = 0;
+    bool        killerIsMounted = false;
+
     if (killerIsPlayer)
     {
         killerEosId = GetEosIdFromController(killer);
         killerSurvivorId = GetCachedSurvivorId(killerEosId);
+
+        AShooterPlayerController* killerPc = static_cast<AShooterPlayerController*>(killer);
+        AShooterCharacter* killerCh = killerPc ? static_cast<AShooterCharacter*>(killerPc->BaseGetPlayerCharacter()) : nullptr;
+        killerIsMounted = IsCharacterMounted(killerCh);
+    }
+
+    APrimalDinoCharacter* killerDino = nullptr;
+    bool                  dinoIsWild = false;
+
+    if (killerIsDino)
+    {
+        APawn* dinoPawn = killer->PawnField().Get();
+        if (dinoPawn)
+        {
+            killerDino = static_cast<APrimalDinoCharacter*>(dinoPawn);
+            dinoIsWild = (killerDino->TamingTeamIDField() == 0);
+        }
     }
 
     Original_ShooterCharacterDie(victim, damage, damageEvent, killer, damageCauser);
@@ -498,16 +555,46 @@ void Detour_ShooterCharacterDie(AShooterCharacter* victim,
     if (killerIsPlayer && !killerEosId.empty() && killerSurvivorId != 0)
     {
         IncrementCounter(killerEosId, killerSurvivorId, "survivor_kills");
+        if (killerIsMounted)
+            IncrementCounter(killerEosId, killerSurvivorId, "survivor_kills_mounted");
+        if (victimIsMounted)
+            IncrementCounter(killerEosId, killerSurvivorId, "survivor_kills_victim_mounted");
+
         IncrementCounter(victimEosId, victimSurvivorId, "deaths_by_survivor");
+        if (killerIsMounted)
+            IncrementCounter(victimEosId, victimSurvivorId, "deaths_by_survivor_mounted");
+        if (victimIsMounted)
+            IncrementCounter(victimEosId, victimSurvivorId, "deaths_while_mounted");
+
+        Log::GetLog()->info(
+            "[SurvivorStats] PLAYER_KILL killer_eos={} killer_mounted={} victim_eos={} victim_mounted={}",
+            killerEosId, killerIsMounted, victimEosId, victimIsMounted);
     }
-    else if (killerIsDino)
+    else if (killerIsDino && killerDino)
     {
-        IncrementCounter(victimEosId, victimSurvivorId, "deaths_by_dino");
+        if (dinoIsWild)
+        {
+            IncrementCounter(victimEosId, victimSurvivorId, "deaths_by_wild_dino");
+            if (victimIsMounted)
+                IncrementCounter(victimEosId, victimSurvivorId, "deaths_by_wild_dino_while_mounted");
+
+            Log::GetLog()->info(
+                "[SurvivorStats] DEATH_BY_WILD_DINO victim_eos={} victim_mounted={}",
+                victimEosId, victimIsMounted);
+        }
+        else
+        {
+            IncrementCounter(victimEosId, victimSurvivorId, "deaths_by_tamed_dino");
+
+            Log::GetLog()->info(
+                "[SurvivorStats] DEATH_BY_TAMED_DINO victim_eos={} victim_mounted={}",
+                victimEosId, victimIsMounted);
+        }
     }
 }
 
 bool Detour_DinoDie(APrimalDinoCharacter* victim,
-    float                 damage,
+    float         damage,
     FDamageEvent& damageEvent,
     AController* killer,
     AActor* damageCauser)
@@ -523,7 +610,33 @@ bool Detour_DinoDie(APrimalDinoCharacter* victim,
     if (killerEosId.empty()) return result;
 
     const uint64_t killerSurvivorId = GetCachedSurvivorId(killerEosId);
-    IncrementCounter(killerEosId, killerSurvivorId, "dino_kills");
+    if (killerSurvivorId == 0) return result;
+
+    AShooterPlayerController* killerPc = static_cast<AShooterPlayerController*>(killer);
+    AShooterCharacter* killerCh = killerPc ? static_cast<AShooterCharacter*>(killerPc->BaseGetPlayerCharacter()) : nullptr;
+    const bool killerIsMounted = IsCharacterMounted(killerCh);
+    const bool dinoIsWild = (victim->TamingTeamIDField() == 0);
+
+    if (dinoIsWild)
+    {
+        IncrementCounter(killerEosId, killerSurvivorId, "wild_dino_kills");
+        if (killerIsMounted)
+            IncrementCounter(killerEosId, killerSurvivorId, "wild_dino_kills_mounted");
+
+        Log::GetLog()->info(
+            "[SurvivorStats] WILD_DINO_KILL killer_eos={} mounted={}",
+            killerEosId, killerIsMounted);
+    }
+    else
+    {
+        IncrementCounter(killerEosId, killerSurvivorId, "tamed_dino_kills");
+        if (killerIsMounted)
+            IncrementCounter(killerEosId, killerSurvivorId, "tamed_dino_kills_mounted");
+
+        Log::GetLog()->info(
+            "[SurvivorStats] TAMED_DINO_KILL killer_eos={} mounted={}",
+            killerEosId, killerIsMounted);
+    }
 
     return result;
 }
