@@ -1,0 +1,11 @@
+{
+    "DbHost": "database_ip",
+    "DbPort": 3306,
+    "DbUser": "db_username",
+    "DbPassword": "db_password",
+    "DbName": "db_name"
+	"DestructionBlacklist": [
+    "Blueprint'/Game/PrimalEarth/Structures/SleepingBag.SleepingBag'",
+    "Blueprint'/Game/PrimalEarth/Structures/TekBed.TekBed'"
+	]
+}
