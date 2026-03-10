@@ -13,23 +13,6 @@ Commercial use or resale is not permitted without explicit permission.
 /**
  * StructureStats - ASA Plugin
  *
- * Hook category: Structures
- *
- * Tables:
- *   building_stats_player — PK (eos_id, survivor_id)
- *     Columns: survivor_name, tribe_name, tribe_id,
- *              structures_placed, structures_demolished, structures_pickedup
- *
- *   building_stats_tribe  — PK tribe_id
- *     Columns: tribe_name,
- *              structures_placed, structures_demolished, structures_pickedup
- *
- *   destruction_player    — PK (eos_id, survivor_id)
- *     Columns: survivor_name, tribe_name, tribe_id, structures_destroyed
- *
- *   destruction_tribe     — PK tribe_id
- *     Columns: tribe_name, structures_destroyed
- *
  * Hooks:
  *   AShooterGameMode.PostLogin                          — rebuild cache on reconnect
  *   AShooterGameMode.StartNewShooterPlayer              — seed survivor_id
@@ -60,6 +43,7 @@ Commercial use or resale is not permitted without explicit permission.
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 #include <cstdio>
@@ -144,6 +128,25 @@ static bool LoadMySQLLib()
 
     g_mysql_loaded = true;
     return true;
+}
+
+// =============================================================================
+// Helpers (forward)
+// =============================================================================
+
+static std::string FStr_Early(const FString& f)
+{
+    const char* s = TCHAR_TO_UTF8(*f);
+    return (s && s[0]) ? s : "";
+}
+
+static std::string GetMapName()
+{
+    UWorld* world = AsaApi::GetApiUtils().GetWorld();
+    if (!world) return "unknown";
+    FString map;
+    world->GetMapName(&map);
+    return FStr_Early(map);
 }
 
 // =============================================================================
@@ -278,6 +281,7 @@ static bool InitDatabase()
         "CREATE TABLE IF NOT EXISTS building_stats_tribe ("
         "  tribe_id             INT              NOT NULL,"
         "  tribe_name           VARCHAR(128)     NOT NULL DEFAULT '',"
+        "  map_name             VARCHAR(64)      NOT NULL DEFAULT '',"
         "  structures_placed    BIGINT           NOT NULL DEFAULT 0,"
         "  PRIMARY KEY (tribe_id)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -299,6 +303,7 @@ static bool InitDatabase()
         "CREATE TABLE IF NOT EXISTS destruction_tribe ("
         "  tribe_id             INT              NOT NULL,"
         "  tribe_name           VARCHAR(128)     NOT NULL DEFAULT '',"
+        "  map_name             VARCHAR(64)      NOT NULL DEFAULT '',"
         "  structures_destroyed BIGINT           NOT NULL DEFAULT 0,"
         "  PRIMARY KEY (tribe_id)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -494,29 +499,33 @@ static void FlushQueue()
 
         if (d.placed > 0)
         {
+            const std::string mapName = GetMapName();
             char sql[512];
             std::snprintf(sql, sizeof(sql),
                 "INSERT INTO building_stats_tribe "
-                "(tribe_id, tribe_name, structures_placed) "
-                "VALUES (%d, '%s', %lld) "
+                "(tribe_id, tribe_name, map_name, structures_placed) "
+                "VALUES (%d, '%s', '%s', %lld) "
                 "ON DUPLICATE KEY UPDATE "
                 "  tribe_name        = VALUES(tribe_name),"
+                "  map_name          = VALUES(map_name),"
                 "  structures_placed = structures_placed + VALUES(structures_placed)",
-                tribeId, safeTN.c_str(),
+                tribeId, safeTN.c_str(), mapName.c_str(),
                 static_cast<long long>(d.placed));
             ExecQuery(sql);
         }
 
         if (d.destroyed > 0)
         {
+            const std::string mapName = GetMapName();
             char sql[512];
             std::snprintf(sql, sizeof(sql),
-                "INSERT INTO destruction_tribe (tribe_id, tribe_name, structures_destroyed) "
-                "VALUES (%d, '%s', %lld) "
+                "INSERT INTO destruction_tribe (tribe_id, tribe_name, map_name, structures_destroyed) "
+                "VALUES (%d, '%s', '%s', %lld) "
                 "ON DUPLICATE KEY UPDATE "
                 "  tribe_name           = VALUES(tribe_name),"
+                "  map_name             = VALUES(map_name),"
                 "  structures_destroyed = structures_destroyed + VALUES(structures_destroyed)",
-                tribeId, safeTN.c_str(),
+                tribeId, safeTN.c_str(), mapName.c_str(),
                 static_cast<long long>(d.destroyed));
             ExecQuery(sql);
         }
@@ -671,6 +680,33 @@ static NetUpdateTribeName_t    Original_NetUpdateTribeName = nullptr;
 static Logout_t                Original_Logout = nullptr;
 static PlacedStructure_t       Original_PlacedStructure = nullptr;
 static StructureDie_t          Original_StructureDie = nullptr;
+
+// =============================================================================
+// Destruction Deduplication
+// =============================================================================
+
+static std::unordered_map<void*, std::chrono::steady_clock::time_point> g_die_seen;
+static std::mutex                                                         g_die_seen_mutex;
+static constexpr int DEDUP_WINDOW_MS = 500;
+
+static bool IsDuplicateDie(void* ptr)
+{
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_die_seen_mutex);
+
+    // Purge stale entries
+    for (auto it = g_die_seen.begin(); it != g_die_seen.end(); )
+    {
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second).count() > DEDUP_WINDOW_MS)
+            it = g_die_seen.erase(it);
+        else
+            ++it;
+    }
+
+    if (g_die_seen.count(ptr)) return true;
+    g_die_seen[ptr] = now;
+    return false;
+}
 
 // =============================================================================
 // Detours — Cache Management
@@ -870,11 +906,24 @@ void Detour_StructureDie(APrimalStructure* structure,
 
     if (!structure) return;
 
+    if (IsDuplicateDie(structure)) return;
+
     if (!killer) return;
 
     // If killer belongs to the same tribe/team as the structure, it is demolish or self-removal.
     const int structureTeam = structure->TargetingTeamField();
     const bool killerIsPC = killer->IsA(AShooterPlayerController::StaticClass());
+
+    std::string dbgEos;
+    if (killerIsPC)
+    {
+        AShooterPlayerController* dbgPC = static_cast<AShooterPlayerController*>(killer);
+        AShooterPlayerState* dbgPS = static_cast<AShooterPlayerState*>(dbgPC->PlayerStateField().Get());
+        if (dbgPS) { FString raw; dbgPS->GetUniqueNetIdAsString(&raw); dbgEos = TCHAR_TO_UTF8(*raw); }
+    }
+    const std::string dbgBp = FStr(AsaApi::GetApiUtils().GetBlueprint(structure));
+    Log::GetLog()->info("[StructureStats] DBG Die ptr={} bp={} structureTeam={} killerIsPC={} eos={}",
+        (void*)structure, dbgBp, structureTeam, killerIsPC, dbgEos);
 
     if (structureTeam != 0 && killerIsPC)
     {
