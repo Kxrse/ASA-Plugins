@@ -13,6 +13,23 @@ Commercial use or resale is not permitted without explicit permission.
 /**
  * StructureStats - ASA Plugin
  *
+ * Hook category: Structures
+ *
+ * Tables:
+ *   building_stats_player — PK (eos_id, survivor_id)
+ *     Columns: survivor_name, tribe_name, tribe_id,
+ *              structures_placed, structures_demolished, structures_pickedup
+ *
+ *   building_stats_tribe  — PK tribe_id
+ *     Columns: tribe_name,
+ *              structures_placed, structures_demolished, structures_pickedup
+ *
+ *   destruction_player    — PK (eos_id, survivor_id)
+ *     Columns: survivor_name, tribe_name, tribe_id, structures_destroyed
+ *
+ *   destruction_tribe     — PK tribe_id
+ *     Columns: tribe_name, structures_destroyed
+ *
  * Hooks:
  *   AShooterGameMode.PostLogin                          — rebuild cache on reconnect
  *   AShooterGameMode.StartNewShooterPlayer              — seed survivor_id
@@ -913,17 +930,6 @@ void Detour_StructureDie(APrimalStructure* structure,
     // If killer belongs to the same tribe/team as the structure, it is demolish or self-removal.
     const int structureTeam = structure->TargetingTeamField();
     const bool killerIsPC = killer->IsA(AShooterPlayerController::StaticClass());
-
-    std::string dbgEos;
-    if (killerIsPC)
-    {
-        AShooterPlayerController* dbgPC = static_cast<AShooterPlayerController*>(killer);
-        AShooterPlayerState* dbgPS = static_cast<AShooterPlayerState*>(dbgPC->PlayerStateField().Get());
-        if (dbgPS) { FString raw; dbgPS->GetUniqueNetIdAsString(&raw); dbgEos = TCHAR_TO_UTF8(*raw); }
-    }
-    const std::string dbgBp = FStr(AsaApi::GetApiUtils().GetBlueprint(structure));
-    Log::GetLog()->info("[StructureStats] DBG Die ptr={} bp={} structureTeam={} killerIsPC={} eos={}",
-        (void*)structure, dbgBp, structureTeam, killerIsPC, dbgEos);
 
     if (structureTeam != 0 && killerIsPC)
     {
