@@ -1,0 +1,9 @@
+{
+  "message_color": "0.0,0.749,1.0,1.0",
+  "sender": "Server",
+  "cooldown_seconds": 5,
+  "commands": {
+    "discord": "https://discord.gg/example",
+    "website": "https://example.com"
+  }
+}
