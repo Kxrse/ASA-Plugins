@@ -19,12 +19,12 @@ Commercial use or resale is not permitted without explicit permission.
 #include <mutex>
 #include <random>
 #include <cctype>
+#include <cstdio>
 
 // =============================================================================
 // Config
 // =============================================================================
 
-static std::string g_server_name = "Server";
 static std::string g_message_color = "0.902,0.365,0.137,1";
 
 static void LoadConfig()
@@ -41,9 +41,8 @@ static void LoadConfig()
     {
         nlohmann::json j;
         f >> j;
-        g_server_name = j.value("servername", "Server");
         g_message_color = j.value("message_color", "0.902,0.365,0.137,1");
-        Log::GetLog()->info("[TribeWarden] Config loaded — servername={}", g_server_name);
+        Log::GetLog()->info("[TribeWarden] Config loaded");
     }
     catch (...) { Log::GetLog()->warn("[TribeWarden] Config parse error"); }
 }
@@ -135,46 +134,42 @@ static void Schedule(const std::string& eos, AShooterPlayerState* ps)
 
     EnforceState& st = g_queue[eos];
     st.ps = ps;
-    st.due = GetTickCount64() + 5000;
+    st.due = GetTickCount64() + 20000;
     st.attempts = 0;
 
     Log::GetLog()->info("[TribeWarden] Scheduled enforcement for {}", eos);
 }
 
+static FLinearColor ParseMessageColor()
+{
+    float r = 0.902f, g = 0.365f, b = 0.137f, a = 1.0f;
+    std::sscanf(g_message_color.c_str(), "%f,%f,%f,%f", &r, &g, &b, &a);
+    return FLinearColor(r, g, b, a);
+}
+
+static AShooterPlayerController* FindPC(AShooterPlayerState* ps)
+{
+    UWorld* world = AsaApi::GetApiUtils().GetWorld();
+    if (!world || !ps) return nullptr;
+    auto& list = world->PlayerControllerListField();
+    for (int i = 0; i < list.Num(); ++i)
+    {
+        APlayerController* ctrl = list[i];
+        if (ctrl && ctrl->PlayerStateField().Get() == ps)
+            return static_cast<AShooterPlayerController*>(ctrl);
+    }
+    return nullptr;
+}
+
 static void NotifyForcedJoin(AShooterPlayerState* ps)
 {
-    if (!ps) return;
+    AShooterPlayerController* pc = FindPC(ps);
+    if (!pc) { Log::GetLog()->warn("[TribeWarden] NotifyForcedJoin — PC not found"); return; }
 
-    try
-    {
-        UWorld* world = AsaApi::GetApiUtils().GetWorld();
-        if (!world) return;
+    FString msg(L"You have been automatically placed into a tribe.");
+    pc->ClientServerNotificationSingle(&msg, ParseMessageColor(), 1.0f, 7.0f, nullptr, nullptr, 9001);
 
-        AShooterPlayerController* pc = nullptr;
-        auto& list = world->PlayerControllerListField();
-        for (int i = 0; i < list.Num(); ++i)
-        {
-            APlayerController* ctrl = list[i];
-            if (ctrl && ctrl->PlayerStateField().Get() == ps)
-            {
-                pc = static_cast<AShooterPlayerController*>(ctrl);
-                break;
-            }
-        }
-        if (!pc) return;
-
-        const std::wstring color(g_message_color.begin(), g_message_color.end());
-        const std::wstring name(g_server_name.begin(), g_server_name.end());
-
-        FString sender(L"");
-        FString fmsg((
-            L"<RichColor Color=\"" + color + L"\">" + name +
-            L"</> <RichColor Color=\"1,1,1,1\">- You have been automatically placed into a tribe.</>"
-            ).c_str());
-
-        AsaApi::GetApiUtils().SendChatMessage(pc, sender, L"{}", std::wstring_view(*fmsg));
-    }
-    catch (...) { Log::GetLog()->warn("[TribeWarden] NotifyForcedJoin failed"); }
+    Log::GetLog()->info("[TribeWarden] NotifyForcedJoin — notification sent");
 }
 
 // =============================================================================
