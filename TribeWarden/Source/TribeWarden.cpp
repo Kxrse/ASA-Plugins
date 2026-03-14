@@ -11,41 +11,14 @@ Commercial use or resale is not permitted without explicit permission.
 */
 
 #include <API/ARK/Ark.h>
-#include <json.hpp>
 #include <Windows.h>
-#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <mutex>
 #include <random>
-#include <cctype>
 #include <cstdio>
 
-// =============================================================================
-// Config
-// =============================================================================
 
-static std::string g_message_color = "0.902,0.365,0.137,1";
-
-static void LoadConfig()
-{
-    const std::string path = "ArkApi/Plugins/TribeWarden/config.json";
-    std::ifstream f(path);
-    if (!f.is_open())
-    {
-        Log::GetLog()->warn("[TribeWarden] config.json not found, using defaults");
-        return;
-    }
-
-    try
-    {
-        nlohmann::json j;
-        f >> j;
-        g_message_color = j.value("message_color", "0.902,0.365,0.137,1");
-        Log::GetLog()->info("[TribeWarden] Config loaded");
-    }
-    catch (...) { Log::GetLog()->warn("[TribeWarden] Config parse error"); }
-}
 
 // =============================================================================
 // Hook Originals
@@ -66,8 +39,8 @@ static GameModeTick_t Original_GameModeTick = nullptr;
 
 struct EnforceState
 {
-    AShooterPlayerState* ps = nullptr;
-    ULONGLONG            due = 0;
+    AShooterPlayerState* ps       = nullptr;
+    ULONGLONG            due      = 0;
     int                  attempts = 0;
 };
 
@@ -133,18 +106,16 @@ static void Schedule(const std::string& eos, AShooterPlayerState* ps)
     std::lock_guard<std::mutex> lock(g_queue_mutex);
 
     EnforceState& st = g_queue[eos];
-    st.ps = ps;
-    st.due = GetTickCount64() + 20000;
+    st.ps       = ps;
+    st.due      = GetTickCount64() + 20000;
     st.attempts = 0;
 
     Log::GetLog()->info("[TribeWarden] Scheduled enforcement for {}", eos);
 }
 
-static FLinearColor ParseMessageColor()
+static FLinearColor MessageColor()
 {
-    float r = 0.902f, g = 0.365f, b = 0.137f, a = 1.0f;
-    std::sscanf(g_message_color.c_str(), "%f,%f,%f,%f", &r, &g, &b, &a);
-    return FLinearColor(r, g, b, a);
+    return FLinearColor(0.918f, 0.918f, 0.918f, 1.0f);
 }
 
 static AShooterPlayerController* FindPC(AShooterPlayerState* ps)
@@ -167,7 +138,7 @@ static void NotifyForcedJoin(AShooterPlayerState* ps)
     if (!pc) { Log::GetLog()->warn("[TribeWarden] NotifyForcedJoin — PC not found"); return; }
 
     FString msg(L"You have been automatically placed into a tribe.");
-    pc->ClientServerNotificationSingle(&msg, ParseMessageColor(), 1.0f, 7.0f, nullptr, nullptr, 9001);
+    pc->ClientServerNotificationSingle(&msg, MessageColor(), 1.0f, 7.0f, nullptr, nullptr, 9001);
 
     Log::GetLog()->info("[TribeWarden] NotifyForcedJoin — notification sent");
 }
@@ -271,8 +242,6 @@ static void Detour_GameModeTick(AShooterGameMode* gm, float delta)
 extern "C" __declspec(dllexport) void Plugin_Init()
 {
     Log::Get().Init("TribeWarden");
-
-    LoadConfig();
 
     AsaApi::GetHooks().SetHook(
         "AShooterPlayerController.HandleRespawned_Implementation(APawn*,bool)",
