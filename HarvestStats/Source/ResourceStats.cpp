@@ -381,7 +381,7 @@ static std::string FStr(const FString& f)
     return (s && s[0]) ? s : "";
 }
 
-// Snapshots item name -> quantity for all items in an inventory component.
+// Snapshots item name -> aggregated quantity for all items in an inventory component.
 static std::unordered_map<std::string, int> SnapshotInventory(UPrimalInventoryComponent* inv)
 {
     std::unordered_map<std::string, int> snap;
@@ -497,7 +497,6 @@ void Detour_GiveHarvestResource(UPrimalHarvestingComponent* comp,
     AActor* harvester,
     TArray<FHarvestResourceEntry, TSizedDefaultAllocator<32>>* overrideResources)
 {
-    // harvester is the AActor performing the harvest (the player character).
     AShooterCharacter* ch = harvester ? static_cast<AShooterCharacter*>(harvester) : nullptr;
 
     UPrimalInventoryComponent* inv = nullptr;
@@ -528,33 +527,26 @@ void Detour_GiveHarvestResource(UPrimalHarvestingComponent* comp,
             survivorId = GetCachedSurvivorId(eosId);
     }
 
-    // Snapshot before.
+    // Snapshot aggregated quantities before.
     std::unordered_map<std::string, int> before;
     if (inv && !eosId.empty() && survivorId != 0)
         before = SnapshotInventory(inv);
 
     Original_GiveHarvestResource(comp, destInv, harvestMultiplier, damageType, harvester, overrideResources);
 
-    // Diff after and queue deltas.
+    // Snapshot aggregated quantities after and diff.
     if (inv && !eosId.empty() && survivorId != 0)
     {
-        TArray<UPrimalItem*>& items = inv->InventoryItemsField();
-        for (int i = 0; i < items.Num(); ++i)
+        const auto after = SnapshotInventory(inv);
+        for (const auto& [name, qtyAfter] : after)
         {
-            UPrimalItem* item = items[i];
-            if (!item) continue;
-            const std::string name = FStr(item->DescriptiveNameBaseField());
-            if (name.empty()) continue;
-            const int qtyAfter = item->GetItemQuantity();
             const int qtyBefore = [&]() -> int {
                 auto it = before.find(name);
                 return it != before.end() ? it->second : 0;
                 }();
             const int delta = qtyAfter - qtyBefore;
             if (delta > 0)
-            {
                 QueueDelta(eosId, survivorId, name, static_cast<int64_t>(delta));
-            }
         }
     }
 }
