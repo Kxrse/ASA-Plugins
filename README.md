@@ -1,11 +1,8 @@
 # ASA-Plugins
 > Custom C++ plugins for **ARK: Survival Ascended** (ASA) built on the [AsaApi / DevAPI](https://github.com/ServersHub/ServerAPI) framework.  
 > Author: **Kxrse** - Non-Commercial, attribution required. See [LICENSE.txt](LICENSE.txt).
-
 ---
-
 ## Plugins
-
 | Plugin | Status | Description |
 |---|---|---|
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a database across a cluster. |
@@ -14,9 +11,8 @@
 | [HarvestStats](ResourceStats/) | Released | Tracks per-character harvested resource totals to a database. |
 | [StructureStats](StructureStats/) | Released | Tracks per-character and per-tribe structure placements and destructions to a database. |
 | [LinkInChat](LinkInChat/) | Released | Allows admins to configure custom `/commands` that respond with a configured message in chat, with cooldown support. |
-
+| [HarvestScale](HarvestScale/) | Released | Scales harvest rates based on tribe size per map using config-driven rate tiers. |
 ---
-
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
 Free to use, modify, and redistribute **with attribution**.  
