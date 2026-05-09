@@ -1,0 +1,29 @@
+{
+    "AdminPassword": "adminpassword",
+    "Admins": [
+        {
+            "Alias": "Kxrse",
+            "EosId": "eosid",
+            "Enabled": true,
+            "UseAllCommands": false,
+            "ForceOnSpawn": {
+                "cheat gcm": false,
+                "cheat enablespectator 1": false
+            },
+            "WhitelistedCommands": []
+        },
+        {
+            "Alias": "Other Account",
+            "EosId": "eosid",
+            "Enabled": false,
+            "UseAllCommands": false,
+            "ForceOnSpawn": {
+                "cheat gcm": false
+            },
+            "WhitelistedCommands": [
+			"cheat gcm",
+			"cheat ghost"
+			]
+        }
+    ]
+}
