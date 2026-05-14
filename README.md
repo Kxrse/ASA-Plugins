@@ -5,6 +5,8 @@
 ## Plugins
 | Plugin | Status | Description |
 |---|---|---|
+| [EnhancedTeleporting](EnhancedTeleporting/) | Released | Home teleport system with TPA, per-tier permissions, foundation checks, combat blocking, and raid zone blocking. Commands: `/sethome`, `/home`, `/delhome`, `/listhome`, `/tpr`, `/tpa`, `/tpc`. |
+| [AutoAdmin](AutoAdmin/) | Released | Automatically grants and manages admin permissions with per-player config, hot-reload, and cheat command blocking. |
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a database across a cluster. |
 | [TribeWarden](TribeWarden/) | Released | Forces all players to always be in a tribe and automatically creates a solo tribe for any tribeless player. |
 | [SurvivorStats](SurvivorStats/) | Released | Tracks per-character stats including level, kills, and deaths to a database. |
