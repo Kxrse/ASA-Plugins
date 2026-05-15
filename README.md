@@ -5,8 +5,9 @@
 ## Plugins
 | Plugin | Status | Description |
 |---|---|---|
-| [EnhancedTeleporting](EnhancedTeleporting/) | Released (Beta) | Home teleport system, per-tier permissions, foundation checks, combat blocking, and raid zone blocking. Commands: `/sethome`, `/home`, `/delhome`, `/listhome`, `/tpr`, `/tpa`, `/tpc`. |
-| [AutoAdmin](AutoAdmin/) | Released | Automatically grants and manages admin permissions with per-player config, hot-reload, and cheat command blocking. |
+| [EnhancedTeleporting](EnhancedTeleporting/) | Released | Home teleport system, per-tier permissions, foundation checks, combat blocking, and raid zone blocking. Commands: `/sethome`, `/home`, `/delhome`, `/listhome`, `/tpr`, `/tpa`, `/tpc`. |
+| [AutoAdmin](AutoAdmin/) | Released | Per-admin config with enable/disable, command whitelisting, ForceOnSpawn commands, cheat blocking, and live config hot-reload with automatic kick on permission downgrade. |
+| [DinoPainter](DinoPainter/) | Released | Paint tribe dinos by region or in bulk using saved presets. Permission-gated with per-group radius limits. Commands: `/paint`, `/paintall`, `/savepaint`, `/paintpresets`, `/paintdel`. |
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a database across a cluster. |
 | [TribeWarden](TribeWarden/) | Released | Forces all players to always be in a tribe and automatically creates a solo tribe for any tribeless player. |
 | [SurvivorStats](SurvivorStats/) | Released | Tracks per-character stats including level, kills, and deaths to a database. |
@@ -14,7 +15,6 @@
 | [StructureStats](StructureStats/) | Released | Tracks per-character and per-tribe structure placements and destructions to a database. |
 | [LinkInChat](LinkInChat/) | Released | Allows admins to configure custom `/commands` that respond with a configured message in chat, with cooldown support. |
 | [HarvestScale](HarvestScale/) | Released | Scales harvest rates based on tribe size per map using config-driven rate tiers. |
-| [AutoAdmin](AutoAdmin/) | Released | Per-admin config with enable/disable, command whitelisting, ForceOnSpawn commands, cheat blocking, and live config hot-reload with automatic kick on permission downgrade. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
