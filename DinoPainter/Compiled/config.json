@@ -1,0 +1,32 @@
+{
+    "Database": {
+        "Host": "localhost",
+        "Port": 3306,
+        "User": "",
+        "Password": "",
+        "Name": ""
+    },
+    "MessageColor": "0, 1, 0.65, 1",
+    "MaxAimRange": 5000.0,
+    "AimDotThreshold": 0.90,
+    "DefaultTier": {
+        "CanPaint": true,
+        "CanPaintAll": false,
+        "MaxRadius": 5000.0,
+        "MaxPresets": 10
+    },
+    "Groups": {
+        "Admins": {
+            "CanPaint": true,
+            "CanPaintAll": true,
+            "MaxRadius": 20000.0,
+            "MaxPresets": 50
+        },
+        "VIP": {
+            "CanPaint": true,
+            "CanPaintAll": true,
+            "MaxRadius": 10000.0,
+            "MaxPresets": 20
+        }
+    }
+}
