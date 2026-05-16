@@ -16,6 +16,7 @@
 | [StructureStats](StructureStats/) | Released | Tracks per-character and per-tribe structure placements and destructions to a database. |
 | [LinkInChat](LinkInChat/) | Released | Allows admins to configure custom `/commands` that respond with a configured message in chat, with cooldown support. |
 | [HarvestScale](HarvestScale/) | Released | Scales harvest rates based on tribe size per map using config-driven rate tiers. |
+| [TurretFiller](TurretFiller/) | Released | Fills nearby auto, heavy, and tek turrets with ammo from player inventory using balanced distribution. Per-player DB-persistent fill range, per-turret combat cooldown, mounted support, and permission-gated group tiers. Commands: `/fill`, `/fillrange`. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
