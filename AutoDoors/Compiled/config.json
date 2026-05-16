@@ -1,0 +1,11 @@
+{
+    "DbHost": "localhost",
+    "DbPort": 3306,
+    "DbUser": "",
+    "DbPassword": "",
+    "DbName": "",
+    "DefaultDelay": 5,
+    "MinDelay": 1,
+    "MaxDelay": 30,
+    "MessageColor": "1.0,1.0,1.0,1.0"
+}
