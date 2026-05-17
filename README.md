@@ -9,6 +9,8 @@
 | [AutoAdmin](AutoAdmin/) | Released | Per-admin config with enable/disable, command whitelisting, ForceOnSpawn commands, cheat blocking, and live config hot-reload with automatic kick on permission downgrade. |
 | [DinoPainter](DinoPainter/) | Released | Paint tribe dinos by region or in bulk using saved presets. Permission-gated with per-group radius limits. Commands: `/paint`, `/paintall`, `/savepaint`, `/paintpresets`, `/paintdel`. |
 | [AutoDoors](AutoDoors/) | Released | Automatically closes doors, hatches, and trapdoors after a configurable delay. Per-player toggle and custom delay with DB persistence. Commands: `/ad`, `/ad {seconds}`. |
+| [TurretFiller](TurretFiller/) | Released | Distributes ammo from player inventory into nearby turrets with permission-gated fill radius and combat cooldown. Commands: `/fill`, `/fillrange`. |
+| [TidyDams](TidyDams/) | Released | Automatically destroys beaver dams when a player closes the inventory and only wood or nothing remains inside. |
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a database across a cluster. |
 | [TribeWarden](TribeWarden/) | Released | Forces all players to always be in a tribe and automatically creates a solo tribe for any tribeless player. |
 | [SurvivorStats](SurvivorStats/) | Released | Tracks per-character stats including level, kills, and deaths to a database. |
