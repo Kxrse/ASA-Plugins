@@ -29,11 +29,18 @@ static std::string GetEos(AShooterPlayerController* pc)
     return FStr(raw);
 }
 
-static void RunCmd(AShooterPlayerController* pc, const wchar_t* cmd)
+static void RunCmdAsAdmin(AShooterPlayerController* pc, const wchar_t* cmd)
 {
+    const bool wasAdmin = pc->bIsAdmin()();
+    if (!wasAdmin)
+        pc->bIsAdmin() = true;
+
     FString fCmd(cmd);
     FString result;
     pc->ConsoleCommand(&result, &fCmd, false);
+
+    if (!wasAdmin)
+        pc->bIsAdmin() = false;
 }
 
 struct GroupConfig
@@ -45,7 +52,6 @@ struct GroupConfig
 };
 
 static const std::string g_config_path = "ArkApi/Plugins/UnlockAll/config.json";
-static std::string g_admin_password;
 static std::unordered_map<std::string, GroupConfig> g_groups;
 static time_t g_config_last_modified = 0;
 static long long g_config_last_size = 0;
@@ -86,8 +92,6 @@ static bool LoadConfig()
     {
         nlohmann::json j;
         file >> j;
-
-        g_admin_password = j.value("AdminPassword", "");
 
         std::unordered_map<std::string, GroupConfig> newGroups;
         if (j.contains("Groups") && j["Groups"].is_object())
@@ -225,37 +229,34 @@ static void ApplyUnlocks(AShooterPlayerController* pc, const std::string& eos)
     LoadPermissionsAPI();
     GroupConfig gc = GetBestGroup(eos);
 
-    std::wstring enableCmd = L"enablecheats " + std::wstring(g_admin_password.begin(), g_admin_password.end());
-    RunCmd(pc, enableCmd.c_str());
-
     bool ownsLC = CheckOwnsLC(pc);
     int count = 0;
 
     if (gc.engrams)
     {
-        RunCmd(pc, L"cheat GiveEngrams");
+        RunCmdAsAdmin(pc, L"cheat GiveEngrams");
         count++;
     }
 
     if (gc.tekEngrams)
     {
-        RunCmd(pc, L"cheat GiveEngramsTekOnly");
+        RunCmdAsAdmin(pc, L"cheat GiveEngramsTekOnly");
         count++;
     }
 
     if (gc.skills && ownsLC)
     {
-        RunCmd(pc, L"cheat GiveAllSkills");
+        RunCmdAsAdmin(pc, L"cheat GiveAllSkills");
         count++;
     }
 
     if (gc.explorerNotes)
     {
-        RunCmd(pc, L"cheat GiveAllExplorerNotes");
+        RunCmdAsAdmin(pc, L"cheat GiveAllExplorerNotes");
         count++;
         if (ownsLC)
         {
-            RunCmd(pc, L"cheat GiveAllExplorerNotesLC");
+            RunCmdAsAdmin(pc, L"cheat GiveAllExplorerNotesLC");
             count++;
         }
     }
@@ -267,7 +268,6 @@ static void ApplyUnlocks(AShooterPlayerController* pc, const std::string& eos)
 static void ProcessPending()
 {
     if (g_pending.empty()) return;
-    if (g_admin_password.empty()) return;
 
     auto now = std::chrono::steady_clock::now();
     std::vector<PendingUnlock> remaining;
