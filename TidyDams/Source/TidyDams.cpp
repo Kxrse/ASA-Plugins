@@ -16,11 +16,11 @@ Commercial use or resale is not permitted without explicit permission.
  * Hook category: Inventory
  *
  * Automatically destroys beaver dams when a player closes the inventory
- * and only wood (or nothing) remains inside.
+ * and no cementing paste remains inside.
  *
  * Hooks:
  *   AShooterPlayerController.ServerActorCloseRemoteInventory_Implementation(UPrimalInventoryComponent*)
- *     — checks dam inventory on close, queues destroy if wood-only or empty
+ *     — checks dam inventory on close, queues destroy if no paste remains
  */
 
 #include <API/ARK/Ark.h>
@@ -30,16 +30,8 @@ Commercial use or resale is not permitted without explicit permission.
 #pragma comment(lib, "AsaApi.lib")
 #pragma warning(disable: 4191)
 
-// =============================================================================
-// Constants
-// =============================================================================
-
 static const std::string DAM_BP_SUBSTRING = "BeaverDam";
-static const std::string WOOD_ITEM_NAME   = "Wood";
-
-// =============================================================================
-// Helpers
-// =============================================================================
+static const std::string PASTE_ITEM_NAME  = "Cementing Paste";
 
 static std::string FStr(const FString& f)
 {
@@ -47,34 +39,24 @@ static std::string FStr(const FString& f)
     return (s && s[0]) ? s : "";
 }
 
-static bool IsWoodOnly(UPrimalInventoryComponent* inv)
+static bool HasCementingPaste(UPrimalInventoryComponent* inv)
 {
-    if (!inv) return true;
+    if (!inv) return false;
 
     TArray<UPrimalItem*>& items = inv->InventoryItemsField();
-    if (items.Num() == 0) return true;
-
     for (int i = 0; i < items.Num(); ++i)
     {
         UPrimalItem* item = items[i];
         if (!item) continue;
 
-        if (FStr(item->DescriptiveNameBaseField()) != WOOD_ITEM_NAME)
-            return false;
+        if (FStr(item->DescriptiveNameBaseField()) == PASTE_ITEM_NAME)
+            return true;
     }
 
-    return true;
+    return false;
 }
 
-// =============================================================================
-// Flagged Inventories (game thread only)
-// =============================================================================
-
 static std::vector<UPrimalInventoryComponent*> g_flagged;
-
-// =============================================================================
-// Hook
-// =============================================================================
 
 using ServerActorCloseRemoteInventory_t = void(*)(AShooterPlayerController*, UPrimalInventoryComponent*);
 static ServerActorCloseRemoteInventory_t Original_ServerActorCloseRemoteInventory = nullptr;
@@ -88,18 +70,13 @@ static void Detour_ServerActorCloseRemoteInventory(AShooterPlayerController* pc,
 
     FString bpStr = AsaApi::GetApiUtils().GetBlueprint(inv);
     const std::string bp = FStr(bpStr);
-    Log::GetLog()->info("[TidyDams] {}", bp);
 
     if (bp.find(DAM_BP_SUBSTRING) == std::string::npos) return;
 
-    if (!IsWoodOnly(inv)) return;
+    if (HasCementingPaste(inv)) return;
 
     g_flagged.push_back(inv);
 }
-
-// =============================================================================
-// Tick Callback — Find Owner Container and Destroy
-// =============================================================================
 
 static void OnTick(float)
 {
@@ -131,10 +108,6 @@ static void OnTick(float)
 
     g_flagged.clear();
 }
-
-// =============================================================================
-// Init / Unload
-// =============================================================================
 
 static void PluginInit()
 {
