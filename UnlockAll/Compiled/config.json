@@ -1,4 +1,5 @@
 {
+    "AdminPassword": "",
     "Groups": {
         "Admins": {
             "Engrams": true,
@@ -7,10 +8,10 @@
             "ExplorerNotes": true
         },
         "Default": {
-            "Engrams": false,
-            "TekEngrams": false,
-            "Skills": false,
-            "ExplorerNotes": false
+            "Engrams": true,
+            "TekEngrams": true,
+            "Skills": true,
+            "ExplorerNotes": true
         }
     }
 }
