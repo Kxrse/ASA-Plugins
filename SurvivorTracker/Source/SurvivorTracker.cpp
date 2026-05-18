@@ -26,6 +26,9 @@ Commercial use or resale is not permitted without explicit permission.
  *   NotifyPlayerLeftTribe  — null tribe fields
  *   NetUpdateTribeName     — update tribe name on rename
  *   Logout                 — final upsert, clear cache entry
+ *
+ * Timer:
+ *   NamePollTimer (10s)    — polls GetPlayerName for all cached players to detect mid-session renames
  */
 
 #include <API/ARK/Ark.h>
@@ -37,12 +40,13 @@ Commercial use or resale is not permitted without explicit permission.
 #include <thread>
 #include <atomic>
 #include <unordered_map>
+#include <vector>
 #include <cstdio>
 #include <cstring>
 
- // =============================================================================
- // MariaDB — Dynamic Load
- // =============================================================================
+// =============================================================================
+// MariaDB — Dynamic Load
+// =============================================================================
 
 typedef struct st_mysql     MYSQL;
 typedef struct st_mysql_res MYSQL_RES;
@@ -72,7 +76,6 @@ static mysql_real_escape_string_t pmysql_real_escape_string = nullptr;
 static mysql_options_t            pmysql_options = nullptr;
 static bool                       g_mysql_loaded = false;
 
-// Searches candidate paths for libmariadb.dll and resolves all function pointers.
 static bool LoadMySQLLib()
 {
     if (g_mysql_loaded) return true;
@@ -133,7 +136,6 @@ static std::string  g_db_user;
 static std::string  g_db_pass;
 static std::string  g_db_name;
 
-// Reads database credentials from ArkApi/Plugins/SurvivorTracker/config.json.
 static bool LoadConfig()
 {
     const std::string path = "ArkApi/Plugins/SurvivorTracker/config.json";
@@ -176,7 +178,6 @@ static bool LoadConfig()
 static MYSQL* g_mysql = nullptr;
 static std::mutex g_db_mutex;
 
-// Caller must hold g_db_mutex.
 static std::string EscapeUnsafe(const std::string& in)
 {
     if (!g_mysql || !pmysql_real_escape_string) return in;
@@ -187,7 +188,6 @@ static std::string EscapeUnsafe(const std::string& in)
     return buf;
 }
 
-// Caller must hold g_db_mutex.
 static bool ExecQuery(const std::string& sql)
 {
     if (!g_mysql) return false;
@@ -201,7 +201,6 @@ static bool ExecQuery(const std::string& sql)
     return true;
 }
 
-// Connects to MariaDB and creates the survivors table if it does not exist.
 static bool InitDatabase()
 {
     if (!LoadMySQLLib()) return false;
@@ -256,7 +255,6 @@ static void CloseDatabase()
     }
 }
 
-// Full upsert keyed on (eos_id, map_name). Pass nullptr for tribe fields to write SQL NULL.
 static void UpsertSurvivor(const std::string& eosId,
     const std::string& survivorName,
     uint64_t           survivorId,
@@ -301,14 +299,14 @@ struct SurvivorRecord
 {
     std::string eosId;
     std::string survivorName;
-    uint64_t    survivorId = 0;  // 0 until StartNewShooterPlayer resolves it.
+    uint64_t    survivorId = 0;
     std::string tribeName;
     int         tribeId = 0;
     bool        inTribe = false;
     std::string mapName;
 };
 
-static std::unordered_map<std::string, SurvivorRecord> g_cache;       // Keyed by eos_id.
+static std::unordered_map<std::string, SurvivorRecord> g_cache;
 static std::mutex                                       g_cache_mutex;
 
 // =============================================================================
@@ -318,7 +316,6 @@ static std::mutex                                       g_cache_mutex;
 static std::thread       g_flush_thread;
 static std::atomic<bool> g_flush_running{ false };
 
-// Wakes every 60 seconds and upserts all cached records to the database.
 static void FlushThreadFunc()
 {
     while (g_flush_running.load())
@@ -368,6 +365,64 @@ static void UpsertFromRecord(const SurvivorRecord& rec)
 }
 
 // =============================================================================
+// Name Poll Timer
+// =============================================================================
+
+static int g_name_poll_counter = 0;
+
+static void NamePollTimerCallback()
+{
+    ++g_name_poll_counter;
+    if (g_name_poll_counter < 10) return;
+    g_name_poll_counter = 0;
+
+    UWorld* world = AsaApi::GetApiUtils().GetWorld();
+    if (!world) return;
+
+    std::vector<std::pair<std::string, std::string>> current;
+
+    auto& controllers = world->PlayerControllerListField();
+    for (int i = 0; i < controllers.Num(); ++i)
+    {
+        AShooterPlayerController* pc = static_cast<AShooterPlayerController*>(controllers[i].Get());
+        if (!pc) continue;
+
+        AShooterPlayerState* ps = static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
+        if (!ps) continue;
+
+        FString eosRaw;
+        ps->GetUniqueNetIdAsString(&eosRaw);
+        std::string eosId = FStr(eosRaw);
+        if (eosId.empty() || eosId == "unknown") continue;
+
+        FString nameRaw;
+        ps->GetPlayerName(&nameRaw);
+        std::string name = FStr(nameRaw);
+        if (name.empty() || name == "unknown") continue;
+
+        current.emplace_back(std::move(eosId), std::move(name));
+    }
+
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    for (const auto& [eosId, currentName] : current)
+    {
+        auto it = g_cache.find(eosId);
+        if (it == g_cache.end()) continue;
+        if (it->second.survivorName == currentName) continue;
+
+        const std::string oldName = it->second.survivorName;
+        it->second.survivorName = currentName;
+
+        Log::GetLog()->info(
+            "[SurvivorTracker] NAME_CHANGED eos_id={} old_name={} new_name={} map={}",
+            eosId, oldName, currentName, it->second.mapName
+        );
+
+        UpsertFromRecord(it->second);
+    }
+}
+
+// =============================================================================
 // Hook Type Aliases
 // =============================================================================
 
@@ -391,8 +446,6 @@ static Logout_t                Original_Logout = nullptr;
 // Detours
 // =============================================================================
 
-// Rebuilds the cache entry for returning players whose pawn is already possessed.
-// New players have no pawn yet — HandleRespawned + StartNewShooterPlayer cover them.
 void Detour_PostLogin(AShooterGameMode* gm, APlayerController* pc)
 {
     Original_PostLogin(gm, pc);
@@ -452,9 +505,6 @@ void Detour_PostLogin(AShooterGameMode* gm, APlayerController* pc)
     UpsertFromRecord(rec);
 }
 
-// Refreshes survivor_name and tribe data on every spawn and respawn.
-// survivor_id is not captured here — GetLinkedPlayerDataID() is not yet populated
-// at this point in the spawn lifecycle. StartNewShooterPlayer resolves it.
 void Detour_HandleRespawned(AShooterPlayerController* pc,
     APawn* pawn,
     bool                      bNewPlayer)
@@ -497,7 +547,6 @@ void Detour_HandleRespawned(AShooterPlayerController* pc,
         auto it = g_cache.find(eosId);
         if (it != g_cache.end())
         {
-            // Respawn — refresh mutable fields, preserve existing survivor_id.
             it->second.survivorName = survivorName;
             it->second.tribeName = tribeName;
             it->second.tribeId = tribeId;
@@ -507,7 +556,6 @@ void Detour_HandleRespawned(AShooterPlayerController* pc,
         }
         else
         {
-            // First spawn this session — create initial cache entry.
             SurvivorRecord rec;
             rec.eosId = eosId;
             rec.survivorName = survivorName;
@@ -522,10 +570,6 @@ void Detour_HandleRespawned(AShooterPlayerController* pc,
     }
 }
 
-// Primary differentiation point between creation and respawn.
-// survivor_id unchanged = respawn, skip.
-// survivor_id is new    = character creation, log CHARACTER_CREATED.
-// survivor_id differs and was non-zero = recreation, null tribe data, log CHARACTER_RECREATED.
 void Detour_StartNewShooterPlayer(AShooterGameMode* gm,
     APlayerController* pc,
     bool                                b1,
@@ -598,9 +642,6 @@ void Detour_StartNewShooterPlayer(AShooterGameMode* gm,
     }
 }
 
-// Updates tribe_name for all online tribe members when the tribe is renamed.
-// Skips when old name is empty — this indicates engine state restoration on
-// respawn rather than a player-initiated rename.
 void Detour_NetUpdateTribeName(APrimalCharacter* character, FString& newNameFStr)
 {
     Original_NetUpdateTribeName(character, newNameFStr);
@@ -650,7 +691,6 @@ void Detour_NetUpdateTribeName(APrimalCharacter* character, FString& newNameFStr
     }
 }
 
-// Updates tribe fields when a player joins or creates a tribe.
 void Detour_NotifyJoinedTribe(AShooterPlayerState* ps,
     FString& playerName,
     FString& tribeName,
@@ -690,7 +730,6 @@ void Detour_NotifyJoinedTribe(AShooterPlayerState* ps,
     }
 }
 
-// Nulls tribe fields when a player leaves a tribe.
 void Detour_NotifyLeftTribe(AShooterPlayerState* ps,
     FString& playerName,
     FString& tribeName,
@@ -726,8 +765,6 @@ void Detour_NotifyLeftTribe(AShooterPlayerState* ps,
     }
 }
 
-// Final upsert from cache on disconnect, then clear the cache entry.
-// Original called last so player state remains valid during access.
 void Detour_Logout(AShooterGameMode* gm, AController* controller)
 {
     if (AShooterPlayerController* pc =
@@ -830,15 +867,23 @@ extern "C" __declspec(dllexport) void Plugin_Init()
         (LPVOID*)&Original_Logout
     );
 
+    AsaApi::GetCommands().AddOnTimerCallback(
+        FString(L"SurvivorTracker_NamePoll"),
+        &NamePollTimerCallback
+    );
+
     Log::GetLog()->info("[SurvivorTracker] Plugin loaded");
 }
 
 extern "C" __declspec(dllexport) void Plugin_Unload()
 {
-    // Stop flush thread before unhooking to avoid upserts during teardown.
     g_flush_running.store(false);
     if (g_flush_thread.joinable())
         g_flush_thread.join();
+
+    AsaApi::GetCommands().RemoveOnTimerCallback(
+        FString(L"SurvivorTracker_NamePoll")
+    );
 
     AsaApi::GetHooks().DisableHook(
         "AShooterGameMode.PostLogin(APlayerController*)",
