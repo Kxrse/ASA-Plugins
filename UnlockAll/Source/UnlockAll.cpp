@@ -29,6 +29,13 @@ static std::string GetEos(AShooterPlayerController* pc)
     return FStr(raw);
 }
 
+static void RunCmd(AShooterPlayerController* pc, const wchar_t* cmd)
+{
+    FString fCmd(cmd);
+    FString result;
+    pc->ConsoleCommand(&result, &fCmd, false);
+}
+
 struct GroupConfig
 {
     bool engrams = true;
@@ -245,6 +252,16 @@ static void ApplyUnlocks(AShooterPlayerController* pc, const std::string& eos)
     }
 
     cm->MyPCField() = pc;
+    cm->InitCheatManager();
+
+    auto& cmFieldRef = pc->CheatManagerField();
+    UPTRINT* cmRawPtr = reinterpret_cast<UPTRINT*>(&cmFieldRef);
+    UPTRINT savedCMPtr = *cmRawPtr;
+    *cmRawPtr = reinterpret_cast<UPTRINT>(cm);
+
+    const bool wasAdmin = pc->bIsAdmin()();
+    if (!wasAdmin)
+        pc->bIsAdmin() = true;
 
     bool ownsLC = CheckOwnsLC(pc);
     int count = 0;
@@ -263,21 +280,25 @@ static void ApplyUnlocks(AShooterPlayerController* pc, const std::string& eos)
 
     if (gc.skills && ownsLC)
     {
-        cm->ProcessConsoleExec(L"GiveAllSkills", nullptr, nullptr);
+        cm->ProcessConsoleExec(L"GiveAllSkills", nullptr, pc);
         count++;
     }
 
     if (gc.explorerNotes)
     {
-        cm->GiveAllExplorerNotes();
+        cm->ProcessConsoleExec(L"UnlockAllExplorerNotes", nullptr, pc);
         count++;
         if (ownsLC)
         {
-            cm->ProcessConsoleExec(L"GiveAllExplorerNotesLC", nullptr, nullptr);
+            cm->ProcessConsoleExec(L"GiveAllExplorerNotesLC", nullptr, pc);
             count++;
         }
     }
 
+    if (!wasAdmin)
+        pc->bIsAdmin() = false;
+
+    *cmRawPtr = savedCMPtr;
     cm->ConditionalBeginDestroy();
 
     g_processed.insert(eos);
