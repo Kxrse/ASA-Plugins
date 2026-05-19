@@ -19,6 +19,7 @@
 | [LinkInChat](LinkInChat/) | Released | Allows admins to configure custom `/commands` that respond with a configured message in chat, with cooldown support. |
 | [HarvestScale](HarvestScale/) | Released | Scales harvest rates based on tribe size per map using config-driven rate tiers. |
 | [UnlockAll](UnlockAll/) | Released | Automatically unlocks engrams, tek engrams, Lost Colony skills, and explorer notes on spawn. Permission-gated with per-group toggles and Lost Colony DLC ownership check. |
+| [PlayerRename](PlayerRename/) | Released | Allows players to rename their survivor via chat command with configurable length limits and a blocked names filter. Command: `/rename`. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
