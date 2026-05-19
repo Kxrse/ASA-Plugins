@@ -328,6 +328,20 @@ static void ProcessPending()
         if (currentEos != p.eosId)
             continue;
 
+        AActor* ch = p.controller->BaseGetPlayerCharacter();
+        if (!ch)
+        {
+            if (elapsed < 120)
+            {
+                remaining.push_back(p);
+            }
+            else
+            {
+                Log::GetLog()->warn("[UnlockAll] Gave up waiting for character — eos={}", p.eosId);
+            }
+            continue;
+        }
+
         try
         {
             ApplyUnlocks(p.controller, p.eosId);
