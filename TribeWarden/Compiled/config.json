@@ -1,4 +1,4 @@
-{	"DbHost": "127.0.0.1",
+{	"DbHost": "localhost",
     "DbPort": 3306,
     "DbUser": "",
     "DbPassword": "",
