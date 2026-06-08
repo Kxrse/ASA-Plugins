@@ -23,6 +23,7 @@
 | [PlayerRename](PlayerRename/) | Released | Allows players to rename their survivor via chat command with configurable length limits and a blocked names filter. Command: `/rename`. |
 | [PrivateMessages](PrivateMessages/) | Released | Private messaging between survivors with duplicate name disambiguation and reply support. Commands: `/pm`, `/r`. |
 | [FoundationParity](FoundationParity/) | Released | Gives walls and ceilings parity with foundations under the enemy-foundation proximity rule, blocking placement within the enemy-foundation prevention radius of an enemy foundation, wall, or ceiling. |
+| [SneakyFoundyFinder](SneakyFoundyFinder/) | Released | Helps players locate meshed enemy foundations when raiding or rebuilding by team-pinging the nearest enemy foundation, floor, or pillar in range. Skips own tribe. A scan radius of 5100 matches the range where ARK's "too close to enemy foundation" placement block is seen. Command: `/sff`. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
