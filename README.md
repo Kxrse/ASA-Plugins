@@ -10,6 +10,7 @@
 | [DinoPainter](DinoPainter/) | Released | Paint tribe dinos by region or in bulk using saved presets. Permission-gated with per-group radius limits. Commands: `/paint`, `/paintall`, `/savepaint`, `/paintpresets`, `/paintdel`. |
 | [AutoDoors](AutoDoors/) | Released | Automatically closes doors, hatches, and trapdoors after a configurable delay. Per-player toggle and custom delay with DB persistence. Commands: `/ad`, `/ad {seconds}`. |
 | [TurretFiller](TurretFiller/) | Released | Fills nearby auto, heavy, and tek turrets with ammo from player inventory using balanced distribution. Per-player DB-persistent fill range, per-turret combat cooldown, mounted support, and permission-gated group tiers. Commands: `/fill`, `/fillrange`. |
+| [TurretFPS](TurretFPS/) | Released | Suppresses tek turret projectile and impact effects to reduce client particle load. Damage is unaffected; auto and heavy turrets are not changed. |
 | [TidyDams](TidyDams/) | Released | Automatically destroys beaver dams when a player closes the inventory and anything apart from Cementing Paste remains inside. |
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a database across a cluster. |
 | [TribeWarden](TribeWarden/) | Released | Forces all players to always be in a tribe and automatically creates a solo tribe for any tribeless player. |
