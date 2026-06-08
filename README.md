@@ -21,6 +21,7 @@
 | [UnlockAll](UnlockAll/) | Released | Automatically unlocks engrams, tek engrams, Lost Colony skills, and explorer notes on spawn. Permission-gated with per-group toggles and Lost Colony DLC ownership check. |
 | [PlayerRename](PlayerRename/) | Released | Allows players to rename their survivor via chat command with configurable length limits and a blocked names filter. Command: `/rename`. |
 | [PrivateMessages](PrivateMessages/) | Released | Private messaging between survivors with duplicate name disambiguation and reply support. Commands: `/pm`, `/r`. |
+| [FoundationParity](FoundationParity/) | Released | Gives walls and ceilings parity with foundations under the enemy-foundation proximity rule, blocking placement within the enemy-foundation prevention radius of an enemy foundation, wall, or ceiling. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
