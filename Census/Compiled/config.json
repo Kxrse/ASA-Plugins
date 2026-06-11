@@ -1,0 +1,13 @@
+{
+  "WebhookUrl": "",
+  "UpdateIntervalSeconds": 30,
+  "DefaultColor": "FFFFFF",
+  "MapNames": {
+    "Ragnarok_WP": "Ragnarok",
+    "Another_Map_Name_WP": "Best Map Ever"
+  },
+  "MapColors": {
+    "Ragnarok_WP": "FF7A00",
+    "Another_Map_Name_WP": "EAEAEA"
+  }
+}
