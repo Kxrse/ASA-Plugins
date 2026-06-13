@@ -25,6 +25,7 @@
 | [FoundationParity](FoundationParity/) | Released | Gives walls and ceilings parity with foundations under the enemy-foundation proximity rule, blocking placement within the enemy-foundation prevention radius of an enemy foundation, wall, or ceiling. |
 | [SneakyFoundyFinder](SneakyFoundyFinder/) | Released | Helps players locate meshed enemy foundations when raiding or rebuilding by team-pinging the nearest enemy foundation, floor, or pillar in range. Skips own tribe. A scan radius of 5100 matches the range where ARK's "too close to enemy foundation" placement block is seen. Command: `/sff`. |
 | [Census](Census/) | Released | Posts a live per-map online roster to Discord as a single edit-in-place embed, showing each player's EOS ID, survivor name, implant ID, tribe name, and tribe ID. Configurable update cadence with per-map display name and color overrides for modded map support. |
+| [YutyAutoRoar](YutyAutoRoar/) | Released | Makes an aimed tribe-owned Yuty fear or courage roar on a configurable interval until stopped, with optional stamina refill and DB persistence that survives reboots and cryo. Tracked Yutys are cleared on death. Commands: `/yar fear`, `/yar courage`, `/yar off`. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
