@@ -26,6 +26,7 @@
 | [SneakyFoundyFinder](SneakyFoundyFinder/) | Released | Helps players locate meshed enemy foundations when raiding or rebuilding by team-pinging the nearest enemy foundation, floor, or pillar in range. Skips own tribe. A scan radius of 5100 matches the range where ARK's "too close to enemy foundation" placement block is seen. Command: `/sff`. |
 | [Census](Census/) | Released | Posts a live per-map online roster to Discord as a single edit-in-place embed, showing each player's EOS ID, survivor name, implant ID, tribe name, and tribe ID. Configurable update cadence with per-map display name and color overrides for modded map support. |
 | [YutyAutoRoar](YutyAutoRoar/) | Released | Makes an aimed tribe-owned Yuty fear or courage roar on a configurable interval until stopped, with optional stamina refill and DB persistence that survives reboots and cryo. Tracked Yutys are cleared on death. Commands: `/yar fear`, `/yar courage`, `/yar off`. |
+| [DropDropper](DropDropper/) | Released | Whitelisted admin tool for spawning supply beacons on the caller. Single and cave drops by colour keyword, per-map mass drops with config-driven blueprint paths for modded map support, and a random party spread across the higher tiers. Commands: `/drop`, `/dropc`, `/massdrop`, `/dropparty`. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
