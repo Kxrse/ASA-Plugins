@@ -27,6 +27,7 @@
 | [Census](Census/) | Released | Posts a live per-map online roster to Discord as a single edit-in-place embed, showing each player's EOS ID, survivor name, implant ID, tribe name, and tribe ID. Configurable update cadence with per-map display name and color overrides for modded map support. |
 | [YutyAutoRoar](YutyAutoRoar/) | Released | Makes an aimed tribe-owned Yuty fear or courage roar on a configurable interval until stopped, with optional stamina refill and DB persistence that survives reboots and cryo. Tracked Yutys are cleared on death. Commands: `/yar fear`, `/yar courage`, `/yar off`. |
 | [DropDropper](DropDropper/) | Released | Whitelisted admin tool for spawning supply beacons on the caller. Single and cave drops by colour keyword, per-map mass drops with config-driven blueprint paths for modded map support, and a random party spread across the higher tiers. Commands: `/drop`, `/dropc`, `/massdrop`, `/dropparty`. |
+| [Kits](Kits/) | Released | Permission-gated kit redemption granting configured items and dino cryopods. Per-rank cooldowns and max uses with DB persistence, vanilla or Pelayori cryopod support, and config hot-reload. Commands: `/kits`, `/kit {name}`. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
