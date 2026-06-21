@@ -1,0 +1,25 @@
+{
+  "DbHost": "127.0.0.1",
+  "DbPort": 3306,
+  "DbUser": "",
+  "DbPassword": "",
+  "DbName": "",
+  "ListCommand": "/ulist",
+  "UploadCommand": "/u",
+  "DownloadCommand": "/d",
+  "UploadAllCommand": "/uploadall",
+  "DownloadAllCommand": "/downloadall",
+  "MessageColor": "0, 1, 0.65, 1",
+  "DefaultSlots": 5,
+  "AllowBlueprints": true,
+  "Groups": {
+    "VIP": 20
+  },
+  "Abbreviations": {
+    "Advanced Rifle Bullet": "arb",
+	"Gunpowder": "gp"
+  },
+  "BlacklistedBlueprints": [
+    "Blueprint'/Game/Extinction/CoreBlueprints/Weapons/PrimalItem_WeaponEmptyCryopod.PrimalItem_WeaponEmptyCryopod'"
+  ]
+}
