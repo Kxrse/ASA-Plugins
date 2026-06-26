@@ -1,54 +1,31 @@
 {
-    "DbHost": "localhost",
+    "DbHost": "127.0.0.1",
     "DbPort": 3306,
     "DbUser": "",
     "DbPassword": "",
     "DbName": "",
+
+    "BlockDbHost": "127.0.0.1",
+    "BlockDbPort": 3306,
+    "BlockDbUser": "",
+    "BlockDbPassword": "",
+    "BlockDbName": "",
+
     "message_color": "1.0,1.0,1.0,1.0",
     "tpa_timeout_seconds": 30,
-    "raid_block_radius_meters": 50,
+    "combat_block_enabled": true,
+    "raid_block_enabled": true,
+
     "default": {
         "max_homes": 1,
-        "teleport_delay_seconds": 5,
-        "cooldown_seconds": 3,
+        "teleport_delay_seconds": 10,
+        "cooldown_seconds": 0,
         "foundation_required": true,
         "allow_cliff_platforms": true,
         "allow_vacuum_compartments": true,
         "allow_tree_platforms": true,
-        "allow_no_build_zones": false,
-        "combat_block_enabled": true,
-        "combat_block_seconds": 30,
-        "raid_block_enabled": true,
-        "raid_block_seconds": 30
+        "allow_no_build_zones": true
     },
-    "groups": {
-        "VIP": {
-            "max_homes": 3,
-            "teleport_delay_seconds": 5,
-            "cooldown_seconds": 120,
-            "foundation_required": true,
-            "allow_cliff_platforms": true,
-            "allow_vacuum_compartments": true,
-            "allow_tree_platforms": true,
-            "allow_no_build_zones": false,
-            "combat_block_enabled": true,
-            "combat_block_seconds": 30,
-            "raid_block_enabled": true,
-            "raid_block_seconds": 30
-        },
-        "Admins": {
-            "max_homes": 10,
-            "teleport_delay_seconds": 0,
-            "cooldown_seconds": 0,
-            "foundation_required": false,
-            "allow_cliff_platforms": true,
-            "allow_vacuum_compartments": true,
-            "allow_tree_platforms": true,
-            "allow_no_build_zones": true,
-            "combat_block_enabled": true,
-            "combat_block_seconds": 60,
-            "raid_block_enabled": true,
-            "raid_block_seconds": 60
-        }
-    }
+
+    "groups": {}
 }

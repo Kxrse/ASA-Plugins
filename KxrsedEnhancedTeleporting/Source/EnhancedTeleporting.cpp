@@ -13,7 +13,7 @@ Commercial use or resale is not permitted without explicit permission.
 /**
  * EnhancedTeleporting - ASA Plugin
  *
- * Hook categories: Chat, Combat, Structures
+ * Hooks: None - chat commands and timers only
  *
  * Table:
  *   home_teleports - PK (eos_id, map_name, home_name)
@@ -33,6 +33,11 @@ Commercial use or resale is not permitted without explicit permission.
  *   Per-group config for max_homes, teleport_delay, cooldown, foundation_required.
  *   Same-tribe /tpr auto-teleports without needing /tpa.
  *   Falls back to "default" tier if player matches no configured group.
+ *
+ * Block integration:
+ *   combat_block_enabled and raid_block_enabled config toggles (both default true).
+ *   When enabled, block state is read from the player_blocks table owned by KxrsedBlocking.
+ *   If player_blocks is unreachable at startup, the relevant block is treated as disabled until restart.
  */
 
 #include <API/ARK/Ark.h>
@@ -49,6 +54,8 @@ Commercial use or resale is not permitted without explicit permission.
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <ctime>
+#include <cstdlib>
 
  // =============================================================================
  // MariaDB - Dynamic Load
@@ -189,10 +196,6 @@ struct GroupTier
     bool   allowVacuumCompartments = false;
     bool   allowTreePlatforms = false;
     bool   allowNoBuildZones = false;
-    bool   combatBlockEnabled = true;
-    int    combatBlockSeconds = 30;
-    bool   raidBlockEnabled = true;
-    int    raidBlockSeconds = 30;
 };
 
 static std::string  g_db_host = "localhost";
@@ -200,9 +203,17 @@ static unsigned int g_db_port = 3306;
 static std::string  g_db_user;
 static std::string  g_db_pass;
 static std::string  g_db_name;
+
+static std::string  g_block_db_host = "127.0.0.1";
+static unsigned int g_block_db_port = 3306;
+static std::string  g_block_db_user;
+static std::string  g_block_db_pass;
+static std::string  g_block_db_name;
 static std::string  g_message_color = "1.0,1.0,1.0,1.0";
 static int          g_tpa_timeout = 30;
-static double       g_raid_block_radius = 5000.0;
+static bool         g_combat_block_enabled = true;
+static bool         g_raid_block_enabled = true;
+static bool         g_player_blocks_available = false;
 
 static GroupTier                                g_default_tier;
 static std::unordered_map<std::string, GroupTier> g_group_tiers;
@@ -228,9 +239,16 @@ static bool LoadConfig()
         g_db_pass = j.value("DbPassword", "");
         g_db_name = j.value("DbName", "");
 
+        g_block_db_host = j.value("BlockDbHost", "127.0.0.1");
+        g_block_db_port = j.value("BlockDbPort", 3306);
+        g_block_db_user = j.value("BlockDbUser", "");
+        g_block_db_pass = j.value("BlockDbPassword", "");
+        g_block_db_name = j.value("BlockDbName", "");
+
         g_message_color = j.value("message_color", "1.0,1.0,1.0,1.0");
         g_tpa_timeout = j.value("tpa_timeout_seconds", 30);
-        g_raid_block_radius = j.value("raid_block_radius_meters", 50.0) * 100.0;
+        g_combat_block_enabled = j.value("combat_block_enabled", true);
+        g_raid_block_enabled = j.value("raid_block_enabled", true);
 
         if (j.contains("default") && j["default"].is_object())
         {
@@ -243,10 +261,6 @@ static bool LoadConfig()
             g_default_tier.allowVacuumCompartments = d.value("allow_vacuum_compartments", false);
             g_default_tier.allowTreePlatforms = d.value("allow_tree_platforms", false);
             g_default_tier.allowNoBuildZones = d.value("allow_no_build_zones", false);
-            g_default_tier.combatBlockEnabled = d.value("combat_block_enabled", true);
-            g_default_tier.combatBlockSeconds = d.value("combat_block_seconds", 30);
-            g_default_tier.raidBlockEnabled = d.value("raid_block_enabled", true);
-            g_default_tier.raidBlockSeconds = d.value("raid_block_seconds", 30);
         }
 
         g_group_tiers.clear();
@@ -263,10 +277,6 @@ static bool LoadConfig()
                 t.allowVacuumCompartments = val.value("allow_vacuum_compartments", g_default_tier.allowVacuumCompartments);
                 t.allowTreePlatforms = val.value("allow_tree_platforms", g_default_tier.allowTreePlatforms);
                 t.allowNoBuildZones = val.value("allow_no_build_zones", g_default_tier.allowNoBuildZones);
-                t.combatBlockEnabled = val.value("combat_block_enabled", g_default_tier.combatBlockEnabled);
-                t.combatBlockSeconds = val.value("combat_block_seconds", g_default_tier.combatBlockSeconds);
-                t.raidBlockEnabled = val.value("raid_block_enabled", g_default_tier.raidBlockEnabled);
-                t.raidBlockSeconds = val.value("raid_block_seconds", g_default_tier.raidBlockSeconds);
                 g_group_tiers[key] = t;
             }
         }
@@ -307,7 +317,8 @@ static void ReloadConfigTick()
 
         g_message_color = j.value("message_color", g_message_color);
         g_tpa_timeout = j.value("tpa_timeout_seconds", g_tpa_timeout);
-        g_raid_block_radius = j.value("raid_block_radius_meters", 50.0) * 100.0;
+        g_combat_block_enabled = j.value("combat_block_enabled", g_combat_block_enabled);
+        g_raid_block_enabled = j.value("raid_block_enabled", g_raid_block_enabled);
 
         if (j.contains("default") && j["default"].is_object())
         {
@@ -320,10 +331,6 @@ static void ReloadConfigTick()
             g_default_tier.allowVacuumCompartments = d.value("allow_vacuum_compartments", false);
             g_default_tier.allowTreePlatforms = d.value("allow_tree_platforms", false);
             g_default_tier.allowNoBuildZones = d.value("allow_no_build_zones", false);
-            g_default_tier.combatBlockEnabled = d.value("combat_block_enabled", true);
-            g_default_tier.combatBlockSeconds = d.value("combat_block_seconds", 30);
-            g_default_tier.raidBlockEnabled = d.value("raid_block_enabled", true);
-            g_default_tier.raidBlockSeconds = d.value("raid_block_seconds", 30);
         }
 
         g_group_tiers.clear();
@@ -340,10 +347,6 @@ static void ReloadConfigTick()
                 t.allowVacuumCompartments = val.value("allow_vacuum_compartments", g_default_tier.allowVacuumCompartments);
                 t.allowTreePlatforms = val.value("allow_tree_platforms", g_default_tier.allowTreePlatforms);
                 t.allowNoBuildZones = val.value("allow_no_build_zones", g_default_tier.allowNoBuildZones);
-                t.combatBlockEnabled = val.value("combat_block_enabled", g_default_tier.combatBlockEnabled);
-                t.combatBlockSeconds = val.value("combat_block_seconds", g_default_tier.combatBlockSeconds);
-                t.raidBlockEnabled = val.value("raid_block_enabled", g_default_tier.raidBlockEnabled);
-                t.raidBlockSeconds = val.value("raid_block_seconds", g_default_tier.raidBlockSeconds);
                 g_group_tiers[key] = t;
             }
         }
@@ -358,12 +361,25 @@ static void ReloadConfigTick()
 static MYSQL* g_mysql = nullptr;
 static std::mutex g_db_mutex;
 
+static MYSQL* g_block_mysql = nullptr;
+static std::mutex g_block_mutex;
+
 static std::string EscapeUnsafe(const std::string& in)
 {
     if (!g_mysql || !pmysql_real_escape_string) return in;
     std::string buf(in.size() * 2 + 1, '\0');
     unsigned long len = pmysql_real_escape_string(
         g_mysql, buf.data(), in.c_str(), (unsigned long)in.size());
+    buf.resize(len);
+    return buf;
+}
+
+static std::string EscapeBlock(const std::string& in)
+{
+    if (!g_block_mysql || !pmysql_real_escape_string) return in;
+    std::string buf(in.size() * 2 + 1, '\0');
+    unsigned long len = pmysql_real_escape_string(
+        g_block_mysql, buf.data(), in.c_str(), (unsigned long)in.size());
     buf.resize(len);
     return buf;
 }
@@ -427,10 +443,44 @@ static bool InitDatabase()
     return true;
 }
 
+static bool InitBlockDatabase()
+{
+    if (!LoadMySQLLib()) return false;
+
+    g_block_mysql = pmysql_init(nullptr);
+    if (!g_block_mysql)
+    {
+        Log::GetLog()->error("[EnhancedTeleporting] block mysql_init returned null");
+        return false;
+    }
+
+    unsigned int timeout = 10;
+    if (pmysql_options) pmysql_options(g_block_mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+
+    if (!pmysql_real_connect(g_block_mysql,
+        g_block_db_host.c_str(), g_block_db_user.c_str(), g_block_db_pass.c_str(),
+        g_block_db_name.c_str(), g_block_db_port, nullptr, 0))
+    {
+        Log::GetLog()->error("[EnhancedTeleporting] block DB connect failed: {}", pmysql_error(g_block_mysql));
+        pmysql_close(g_block_mysql);
+        g_block_mysql = nullptr;
+        return false;
+    }
+
+    Log::GetLog()->info("[EnhancedTeleporting] Block database connected");
+    return true;
+}
+
 static void CloseDatabase()
 {
-    std::lock_guard<std::mutex> lock(g_db_mutex);
-    if (g_mysql) { pmysql_close(g_mysql); g_mysql = nullptr; }
+    {
+        std::lock_guard<std::mutex> lock(g_db_mutex);
+        if (g_mysql) { pmysql_close(g_mysql); g_mysql = nullptr; }
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_block_mutex);
+        if (g_block_mysql) { pmysql_close(g_block_mysql); g_block_mysql = nullptr; }
+    }
 }
 
 // =============================================================================
@@ -613,16 +663,6 @@ static void Notify(AShooterPlayerController* pc, const std::wstring& msg)
     const std::wstring wColor(g_message_color.begin(), g_message_color.end());
     const std::wstring wFull =
         L"<RichColor Color=\"" + wColor + L"\">" + msg + L"</>";
-
-    FString fSender(L"");
-    FString fMsg(wFull.c_str());
-    AsaApi::GetApiUtils().SendChatMessage(pc, fSender, L"{}", std::wstring_view(*fMsg));
-}
-
-static void NotifyColor(AShooterPlayerController* pc, const std::wstring& msg, const std::wstring& color)
-{
-    const std::wstring wFull =
-        L"<RichColor Color=\"" + color + L"\">" + msg + L"</>";
 
     FString fSender(L"");
     FString fMsg(wFull.c_str());
@@ -902,18 +942,6 @@ struct TPARequest
 static std::vector<TPARequest> g_tpa_requests;
 static std::mutex              g_tpa_mutex;
 
-// Combat & Raid tracking
-static std::unordered_map<std::string, std::chrono::steady_clock::time_point> g_combat_times;
-static std::mutex g_combat_mutex;
-
-struct RaidZone {
-    double x, y;
-    std::chrono::steady_clock::time_point lastHit;
-};
-static std::vector<RaidZone> g_raid_zones;
-static std::unordered_set<std::string> g_raid_blocked_players;
-static std::mutex g_raid_mutex;
-
 struct OnlinePlayer
 {
     AShooterPlayerController* pc;
@@ -976,180 +1004,58 @@ static std::vector<OnlinePlayer> FindOnlineByName(const std::string& searchName)
 }
 
 // =============================================================================
-// Combat & Raid Detection Hooks
+// Block State (read from KxrsedBlocking player_blocks)
 // =============================================================================
 
-DECLARE_HOOK(APrimalCharacter_TakeDamage, float, APrimalCharacter*, float, FDamageEvent*, AController*, AActor*);
-DECLARE_HOOK(APrimalStructure_TakeDamage, float, APrimalStructure*, float, FDamageEvent*, AController*, AActor*);
-
-static int GetAttackerTeam(AController* instigator, AActor* damageCauser)
+static long long GetActiveBlockExpiry(const std::string& eosId, const char* blockType)
 {
-    if (instigator)
+    const std::string eEos = EscapeBlock(eosId);
+    const std::string eMap = EscapeBlock(GetMapName());
+
+    char sql[320];
+    std::snprintf(sql, sizeof(sql),
+        "SELECT expires_at FROM player_blocks WHERE eos_id='%s' AND map_name='%s' AND block_type='%s'",
+        eEos.c_str(), eMap.c_str(), blockType);
+
+    std::lock_guard<std::mutex> lock(g_block_mutex);
+    if (!g_block_mysql) return 0;
+    if (pmysql_query(g_block_mysql, sql) != 0) return 0;
+
+    long long expiry = 0;
+    if (MYSQL_RES* res = pmysql_store_result(g_block_mysql))
     {
-        APawn* pawn = instigator->PawnField().Get();
-        if (pawn) return pawn->TargetingTeamField();
+        MYSQL_ROW row = pmysql_fetch_row(res);
+        if (row && row[0]) expiry = std::atoll(row[0]);
+        pmysql_free_result(res);
     }
-    if (damageCauser) return damageCauser->TargetingTeamField();
-    return 0;
+    return expiry;
 }
 
-static bool IsAttackerWild(AController* instigator, AActor* damageCauser)
+static bool ProbePlayerBlocksTable()
 {
-    if (instigator && instigator->IsA(AShooterPlayerController::StaticClass()))
-        return false;
-
-    if (damageCauser && damageCauser->IsA(APrimalDinoCharacter::StaticClass()))
-    {
-        auto* dino = static_cast<APrimalDinoCharacter*>(damageCauser);
-        return dino->TamingTeamIDField() == 0;
-    }
-
-    if (damageCauser && damageCauser->IsA(APrimalStructure::StaticClass()))
-        return false;
-
+    std::lock_guard<std::mutex> lock(g_block_mutex);
+    if (!g_block_mysql) return false;
+    if (pmysql_query(g_block_mysql, "SELECT 1 FROM player_blocks LIMIT 1") != 0) return false;
+    if (MYSQL_RES* res = pmysql_store_result(g_block_mysql))
+        pmysql_free_result(res);
     return true;
 }
 
-static bool MarkCombat(const std::string& eosId)
+static bool IsCombatBlocked(const std::string& eosId, int& remaining)
 {
-    if (eosId.empty()) return false;
-    std::lock_guard<std::mutex> lock(g_combat_mutex);
-    auto it = g_combat_times.find(eosId);
-    bool isNew = (it == g_combat_times.end());
-    if (!isNew)
-    {
-        const GroupTier tier = ResolveTier(eosId);
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - it->second).count();
-        if (elapsed >= tier.combatBlockSeconds)
-            isNew = true;
-    }
-    g_combat_times[eosId] = std::chrono::steady_clock::now();
-    return isNew;
-}
-
-static void UpdateRaidZone(double sx, double sy)
-{
-    std::lock_guard<std::mutex> lock(g_raid_mutex);
-    auto now = std::chrono::steady_clock::now();
-
-    // Find nearest existing zone within merge distance
-    for (auto& zone : g_raid_zones)
-    {
-        double dx = sx - zone.x;
-        double dy = sy - zone.y;
-        double dist = std::sqrt(dx * dx + dy * dy);
-        if (dist < g_raid_block_radius)
-        {
-            zone.lastHit = now;
-            return;
-        }
-    }
-
-    // No nearby zone found, create new one
-    g_raid_zones.push_back({ sx, sy, now });
-}
-
-float Hook_APrimalCharacter_TakeDamage(APrimalCharacter* _this, float Damage, FDamageEvent* DamageEvent, AController* EventInstigator, AActor* DamageCauser)
-{
-    float result = APrimalCharacter_TakeDamage_original(_this, Damage, DamageEvent, EventInstigator, DamageCauser);
-
-    if (Damage <= 0.0f) return result;
-    if (!EventInstigator && !DamageCauser) return result;
-
-    int victimTeam = _this->TargetingTeamField();
-    int attackerTeam = GetAttackerTeam(EventInstigator, DamageCauser);
-
-    if (victimTeam == attackerTeam || attackerTeam == 0) return result;
-    if (IsAttackerWild(EventInstigator, DamageCauser)) return result;
-
-    // Mark victim if player
-    if (_this->IsA(AShooterCharacter::StaticClass()))
-    {
-        AShooterCharacter* sc = static_cast<AShooterCharacter*>(_this);
-        AController* ctrl = sc->ControllerField().Get();
-        if (ctrl && ctrl->IsA(AShooterPlayerController::StaticClass()))
-        {
-            auto* vpc = static_cast<AShooterPlayerController*>(ctrl);
-            std::string eos = GetEosId(vpc);
-            if (MarkCombat(eos))
-            {
-                const GroupTier tier = ResolveTier(eos);
-                NotifyColor(vpc, L"Combat Blocked for " + std::to_wstring(tier.combatBlockSeconds) + L" seconds.", L"1.0,0.2,0.2,1.0");
-            }
-        }
-    }
-
-    // Mark attacker if player
-    if (EventInstigator && EventInstigator->IsA(AShooterPlayerController::StaticClass()))
-    {
-        auto* apc = static_cast<AShooterPlayerController*>(EventInstigator);
-        std::string eos = GetEosId(apc);
-        if (MarkCombat(eos))
-        {
-            const GroupTier tier = ResolveTier(eos);
-            NotifyColor(apc, L"Combat Blocked for " + std::to_wstring(tier.combatBlockSeconds) + L" seconds.", L"1.0,0.2,0.2,1.0");
-        }
-    }
-
-    return result;
-}
-
-float Hook_APrimalStructure_TakeDamage(APrimalStructure* _this, float Damage, FDamageEvent* DamageEvent, AController* EventInstigator, AActor* DamageCauser)
-{
-    float result = APrimalStructure_TakeDamage_original(_this, Damage, DamageEvent, EventInstigator, DamageCauser);
-
-    if (Damage <= 0.0f) return result;
-    if (!EventInstigator && !DamageCauser) return result;
-
-    int structTeam = _this->TargetingTeamField();
-    int attackerTeam = GetAttackerTeam(EventInstigator, DamageCauser);
-
-    if (structTeam == attackerTeam || attackerTeam == 0) return result;
-    if (IsAttackerWild(EventInstigator, DamageCauser)) return result;
-
-    // Get structure position
-    USceneComponent* sRoot = _this->RootComponentField();
-    if (!sRoot) return result;
-
-    auto sLoc = sRoot->RelativeLocationField();
-    double sx = sLoc.X, sy = sLoc.Y;
-
-    // Mark attacker as combat blocked
-    if (EventInstigator && EventInstigator->IsA(AShooterPlayerController::StaticClass()))
-    {
-        auto* apc = static_cast<AShooterPlayerController*>(EventInstigator);
-        std::string eos = GetEosId(apc);
-        const GroupTier tier = ResolveTier(eos);
-
-        if (MarkCombat(eos))
-            NotifyColor(apc, L"Combat Blocked for " + std::to_wstring(tier.combatBlockSeconds) + L" seconds.", L"1.0,0.2,0.2,1.0");
-    }
-
-    // Update raid zone at structure location
-    UpdateRaidZone(sx, sy);
-
-    return result;
-}
-
-static bool IsCombatBlocked(const std::string& eosId, const GroupTier& tier, int& remaining)
-{
-    if (!tier.combatBlockEnabled) return false;
-    std::lock_guard<std::mutex> lock(g_combat_mutex);
-    auto it = g_combat_times.find(eosId);
-    if (it == g_combat_times.end()) return false;
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - it->second).count();
-    if (elapsed >= tier.combatBlockSeconds) return false;
-    remaining = tier.combatBlockSeconds - static_cast<int>(elapsed);
+    if (!g_combat_block_enabled || !g_player_blocks_available) return false;
+    const long long now = (long long)time(nullptr);
+    const long long expiry = GetActiveBlockExpiry(eosId, "combat");
+    if (expiry <= now) return false;
+    remaining = (int)(expiry - now);
     return true;
 }
 
-static bool IsRaidBlocked(const std::string& eosId, const GroupTier& tier)
+static bool IsRaidBlocked(const std::string& eosId)
 {
-    if (!tier.raidBlockEnabled) return false;
-    std::lock_guard<std::mutex> lock(g_raid_mutex);
-    return g_raid_blocked_players.count(eosId) > 0;
+    if (!g_raid_block_enabled || !g_player_blocks_available) return false;
+    const long long now = (long long)time(nullptr);
+    return GetActiveBlockExpiry(eosId, "raid") > now;
 }
 
 // =============================================================================
@@ -1194,128 +1100,11 @@ static bool TeleportToPlayer(AShooterPlayerController* sender, AShooterPlayerCon
 }
 
 // =============================================================================
-// Combat/Raid Exit Detection
-// =============================================================================
-
-static void ProcessCombatCountdowns()
-{
-    auto now = std::chrono::steady_clock::now();
-
-    // Combat exit notifications
-    {
-        std::lock_guard<std::mutex> lock(g_combat_mutex);
-        for (auto it = g_combat_times.begin(); it != g_combat_times.end(); )
-        {
-            const GroupTier tier = ResolveTier(it->first);
-            if (!tier.combatBlockEnabled)
-            {
-                it = g_combat_times.erase(it);
-                continue;
-            }
-
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->second).count();
-
-            if (elapsed >= tier.combatBlockSeconds)
-            {
-                FString fEos(it->first.c_str());
-                AShooterPlayerController* pc = AsaApi::GetApiUtils().FindPlayerFromEOSID(fEos);
-                if (pc) NotifyColor(pc, L"Combat Block Removed.", L"0.2,1.0,0.2,1.0");
-                it = g_combat_times.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-
-    // Raid zone processing
-    {
-        std::lock_guard<std::mutex> lock(g_raid_mutex);
-
-        // Remove expired zones
-        for (auto it = g_raid_zones.begin(); it != g_raid_zones.end(); )
-        {
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->lastHit).count();
-            if (elapsed >= g_default_tier.raidBlockSeconds)
-                it = g_raid_zones.erase(it);
-            else
-                ++it;
-        }
-
-        // Build new blocked set based on positions
-        std::unordered_set<std::string> newBlocked;
-
-        if (!g_raid_zones.empty())
-        {
-            UWorld* world = AsaApi::GetApiUtils().GetWorld();
-            if (world)
-            {
-                auto& controllers = world->PlayerControllerListField();
-                for (int i = 0; i < controllers.Num(); ++i)
-                {
-                    AShooterPlayerController* pc = static_cast<AShooterPlayerController*>(controllers[i].Get());
-                    if (!pc) continue;
-
-                    AActor* ch = pc->BaseGetPlayerCharacter();
-                    if (!ch) continue;
-
-                    USceneComponent* root = ch->RootComponentField();
-                    if (!root) continue;
-
-                    auto loc = root->RelativeLocationField();
-                    std::string eos = GetEosId(pc);
-                    const GroupTier tier = ResolveTier(eos);
-
-                    if (!tier.raidBlockEnabled) continue;
-
-                    for (const auto& zone : g_raid_zones)
-                    {
-                        double dx = zone.x - loc.X;
-                        double dy = zone.y - loc.Y;
-                        double dist = std::sqrt(dx * dx + dy * dy);
-                        if (dist <= g_raid_block_radius)
-                        {
-                            newBlocked.insert(eos);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Detect enter/exit
-        for (const auto& eos : newBlocked)
-        {
-            if (g_raid_blocked_players.count(eos) == 0)
-            {
-                FString fEos(eos.c_str());
-                AShooterPlayerController* pc = AsaApi::GetApiUtils().FindPlayerFromEOSID(fEos);
-                if (pc) NotifyColor(pc, L"You are in an active raid zone. Teleporting blocked.", L"1.0,0.2,0.2,1.0");
-            }
-        }
-        for (const auto& eos : g_raid_blocked_players)
-        {
-            if (newBlocked.count(eos) == 0)
-            {
-                FString fEos(eos.c_str());
-                AShooterPlayerController* pc = AsaApi::GetApiUtils().FindPlayerFromEOSID(fEos);
-                if (pc) NotifyColor(pc, L"Raid Block Removed.", L"0.2,1.0,0.2,1.0");
-            }
-        }
-
-        g_raid_blocked_players = newBlocked;
-    }
-}
-
-// =============================================================================
 // Timer Callback - Process Pending Teleports & TPA Cleanup
 // =============================================================================
 
 static void ProcessPendingTeleports()
 {
-    ProcessCombatCountdowns();
-
     const auto now = std::chrono::steady_clock::now();
 
     // Process home teleports
@@ -1347,13 +1136,13 @@ static void ProcessPendingTeleports()
 
                 {
                     int rem = 0;
-                    if (IsCombatBlocked(it->eosId, tier, rem))
+                    if (IsCombatBlocked(it->eosId, rem))
                     {
                         Notify(pc, L"Teleport cancelled. You are in combat.");
                         it = g_pending.erase(it);
                         continue;
                     }
-                    if (IsRaidBlocked(it->eosId, tier))
+                    if (IsRaidBlocked(it->eosId))
                     {
                         Notify(pc, L"Teleport cancelled. You are in an active raid zone.");
                         it = g_pending.erase(it);
@@ -1534,12 +1323,12 @@ static void Cmd_Home(AShooterPlayerController* pc, FString* message, int /*mode*
 
     {
         int rem = 0;
-        if (IsCombatBlocked(eosId, tier, rem))
+        if (IsCombatBlocked(eosId, rem))
         {
             Notify(pc, L"You are in combat. " + std::to_wstring(rem) + L"s remaining.");
             return;
         }
-        if (IsRaidBlocked(eosId, tier))
+        if (IsRaidBlocked(eosId))
         {
             Notify(pc, L"You are in an active raid zone.");
             return;
@@ -1688,16 +1477,14 @@ static void Cmd_TPR(AShooterPlayerController* pc, FString* message, int /*mode*/
         return;
     }
 
-    const GroupTier tier = ResolveTier(senderEos);
-
     {
         int rem = 0;
-        if (IsCombatBlocked(senderEos, tier, rem))
+        if (IsCombatBlocked(senderEos, rem))
         {
             Notify(pc, L"You are in combat. " + std::to_wstring(rem) + L"s remaining.");
             return;
         }
-        if (IsRaidBlocked(senderEos, tier))
+        if (IsRaidBlocked(senderEos))
         {
             Notify(pc, L"You are in an active raid zone.");
             return;
@@ -1952,15 +1739,14 @@ static void Cmd_TPA(AShooterPlayerController* pc, FString* /*message*/, int /*mo
     }
 
     {
-        const GroupTier senderTier = ResolveTier(found.senderEos);
         int rem = 0;
-        if (IsCombatBlocked(found.senderEos, senderTier, rem))
+        if (IsCombatBlocked(found.senderEos, rem))
         {
             Notify(senderPc, L"You are in combat. " + std::to_wstring(rem) + L"s remaining.");
             Notify(pc, L"The requesting player is in combat.");
             return;
         }
-        if (IsRaidBlocked(found.senderEos, senderTier))
+        if (IsRaidBlocked(found.senderEos))
         {
             Notify(senderPc, L"You are in an active raid zone.");
             Notify(pc, L"The requesting player is in an active raid zone.");
@@ -2052,6 +1838,11 @@ extern "C" __declspec(dllexport) void Plugin_Init()
         return;
     }
 
+    if (InitBlockDatabase())
+        g_player_blocks_available = ProbePlayerBlocksTable();
+    if (!g_player_blocks_available && (g_combat_block_enabled || g_raid_block_enabled))
+        Log::GetLog()->error("[EnhancedTeleporting] player_blocks table unreachable - combat and raid block disabled until restart");
+
     AsaApi::GetCommands().AddChatCommand(FString(L"/sethome"), &Cmd_SetHome);
     AsaApi::GetCommands().AddChatCommand(FString(L"/home"), &Cmd_Home);
     AsaApi::GetCommands().AddChatCommand(FString(L"/delhome"), &Cmd_HomeDel);
@@ -2062,11 +1853,6 @@ extern "C" __declspec(dllexport) void Plugin_Init()
 
     AsaApi::GetCommands().AddOnTimerCallback(FString(L"EnhancedTeleporting_Timer"), &ProcessPendingTeleports);
     AsaApi::GetCommands().AddOnTimerCallback(FString(L"EnhancedTeleporting_Reload"), &ReloadConfigTick);
-
-    AsaApi::GetHooks().SetHook("APrimalCharacter.TakeDamage(float,FDamageEvent&,AController*,AActor*)",
-        (LPVOID)&Hook_APrimalCharacter_TakeDamage, (LPVOID*)&APrimalCharacter_TakeDamage_original);
-    AsaApi::GetHooks().SetHook("APrimalStructure.TakeDamage(float,FDamageEvent&,AController*,AActor*)",
-        (LPVOID)&Hook_APrimalStructure_TakeDamage, (LPVOID*)&APrimalStructure_TakeDamage_original);
 
     Log::GetLog()->info("[EnhancedTeleporting] Plugin loaded");
 }
@@ -2084,11 +1870,6 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     AsaApi::GetCommands().RemoveOnTimerCallback(FString(L"EnhancedTeleporting_Timer"));
     AsaApi::GetCommands().RemoveOnTimerCallback(FString(L"EnhancedTeleporting_Reload"));
 
-    AsaApi::GetHooks().DisableHook("APrimalCharacter.TakeDamage(float,FDamageEvent&,AController*,AActor*)",
-        (LPVOID)&Hook_APrimalCharacter_TakeDamage);
-    AsaApi::GetHooks().DisableHook("APrimalStructure.TakeDamage(float,FDamageEvent&,AController*,AActor*)",
-        (LPVOID)&Hook_APrimalStructure_TakeDamage);
-
     {
         std::lock_guard<std::mutex> lock(g_pending_mutex);
         g_pending.clear();
@@ -2100,15 +1881,6 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     {
         std::lock_guard<std::mutex> lock(g_tpa_mutex);
         g_tpa_requests.clear();
-    }
-    {
-        std::lock_guard<std::mutex> lock(g_combat_mutex);
-        g_combat_times.clear();
-    }
-    {
-        std::lock_guard<std::mutex> lock(g_raid_mutex);
-        g_raid_zones.clear();
-        g_raid_blocked_players.clear();
     }
 
     CloseDatabase();
