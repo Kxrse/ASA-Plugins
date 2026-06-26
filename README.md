@@ -5,7 +5,7 @@
 ## Plugins
 | Plugin | Status | Description |
 |---|---|---|
-| [KxrsedEnhancedTeleporting](KxrsedEnhancedTeleporting/) | Released | Home teleport system, per-tier permissions, foundation checks, combat blocking, and raid zone blocking. Commands: `/sethome`, `/home`, `/delhome`, `/listhome`, `/tpr`, `/tpa`, `/tpc`. |
+| [KxrsedEnhancedTeleporting](KxrsedEnhancedTeleporting/) | Released | Home teleport system with per-tier permissions and foundation checks. Reads cluster combat and raid block state from KxrsedBlocking, gated by independent config toggles. Commands: `/sethome`, `/home`, `/delhome`, `/listhome`, `/tpr`, `/tpa`, `/tpc`. |
 | [KxrsedAutoAdmin](KxrsedAutoAdmin/) | Released | Per-admin config with enable/disable, command whitelisting, ForceOnSpawn commands, cheat blocking, and live config hot-reload with automatic kick on permission downgrade. |
 | [KxrsedDinoPainter](KxrsedDinoPainter/) | Released | Paint tribe dinos by region or in bulk using saved presets. Permission-gated with per-group radius limits. Commands: `/paint`, `/paintall`, `/savepaint`, `/paintpresets`, `/paintdel`. |
 | [KxrsedAutoDoors](KxrsedAutoDoors/) | Released | Automatically closes doors, hatches, and trapdoors after a configurable delay. Per-player toggle and custom delay with DB persistence. Commands: `/ad`, `/ad {seconds}`. |
