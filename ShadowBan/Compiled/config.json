@@ -1,0 +1,9 @@
+{
+  "DbHost": "127.0.0.1",
+  "DbPort": 3306,
+  "DbUser": "",
+  "DbPassword": "",
+  "DbName": "",
+  "LeashDistance": 100,
+  "RefreshIntervalSeconds": 30
+}
