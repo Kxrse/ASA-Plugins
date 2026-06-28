@@ -13,14 +13,14 @@ Commercial use or resale is not permitted without explicit permission.
 /**
  * ShadowBan - ASA Plugin
  *
- * Hooks: None - console/RCON commands and timers only
+ * Hooks: None - RCON commands and timers only
  *
  * Tables:
  *   shadow_bans - PK (eos_id)
  *   shadow_ban_pins - PK (eos_id, map_name)
  *     Columns: x (DOUBLE), y (DOUBLE), z (DOUBLE)
  *
- * Commands (console and RCON):
+ * Commands (RCON only):
  *   shadowban {eos_id}    - add the player to the cluster ban roster; if online here, pin to current location
  *   unshadowban {eos_id}  - remove the player from the roster and clear all pins across all maps
  *
@@ -642,33 +642,11 @@ static void RemoveShadowBan(const std::string& eosId)
     Log::GetLog()->info("[ShadowBan] UNBANNED eos={}", eosId);
 }
 
-static void NotifyAdmin(APlayerController* pc, const std::wstring& msg)
-{
-    if (!pc) return;
-    AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(pc);
-    FString fSender(L"ShadowBan");
-    AsaApi::GetApiUtils().SendChatMessage(spc, fSender, L"{}", std::wstring_view(msg));
-}
-
 static void RconReply(RCONClientConnection* conn, RCONPacket* packet, const std::wstring& msg)
 {
     if (!conn || !packet) return;
     FString reply(msg.c_str());
     conn->SendMessageW(packet->Id, 0, &reply);
-}
-
-static void Cmd_ShadowBan_Console(APlayerController* pc, FString* cmd, bool)
-{
-    std::string eos = GetLastToken(FStr(*cmd));
-    if (!IsValidEos(eos))
-    {
-        NotifyAdmin(pc, L"Usage: shadowban {eos_id}");
-        return;
-    }
-
-    ApplyShadowBan(eos);
-    std::wstring weos(eos.begin(), eos.end());
-    NotifyAdmin(pc, L"Shadowbanned " + weos);
 }
 
 static void Cmd_ShadowBan_Rcon(RCONClientConnection* conn, RCONPacket* packet, UWorld*)
@@ -683,20 +661,6 @@ static void Cmd_ShadowBan_Rcon(RCONClientConnection* conn, RCONPacket* packet, U
     ApplyShadowBan(eos);
     std::wstring weos(eos.begin(), eos.end());
     RconReply(conn, packet, L"Shadowbanned " + weos);
-}
-
-static void Cmd_UnShadowBan_Console(APlayerController* pc, FString* cmd, bool)
-{
-    std::string eos = GetLastToken(FStr(*cmd));
-    if (!IsValidEos(eos))
-    {
-        NotifyAdmin(pc, L"Usage: unshadowban {eos_id}");
-        return;
-    }
-
-    RemoveShadowBan(eos);
-    std::wstring weos(eos.begin(), eos.end());
-    NotifyAdmin(pc, L"Removed shadowban for " + weos);
 }
 
 static void Cmd_UnShadowBan_Rcon(RCONClientConnection* conn, RCONPacket* packet, UWorld*)
@@ -727,9 +691,7 @@ static void Init_Internal()
         return;
     }
 
-    AsaApi::GetCommands().AddConsoleCommand(FString(L"shadowban"), &Cmd_ShadowBan_Console);
     AsaApi::GetCommands().AddRconCommand(FString(L"shadowban"), &Cmd_ShadowBan_Rcon);
-    AsaApi::GetCommands().AddConsoleCommand(FString(L"unshadowban"), &Cmd_UnShadowBan_Console);
     AsaApi::GetCommands().AddRconCommand(FString(L"unshadowban"), &Cmd_UnShadowBan_Rcon);
 
     AsaApi::GetCommands().AddOnTimerCallback(FString(L"ShadowBan_Tick"), &EnforceTick);
@@ -741,9 +703,7 @@ static void Init_Internal()
 
 static void Unload_Internal()
 {
-    AsaApi::GetCommands().RemoveConsoleCommand(FString(L"shadowban"));
     AsaApi::GetCommands().RemoveRconCommand(FString(L"shadowban"));
-    AsaApi::GetCommands().RemoveConsoleCommand(FString(L"unshadowban"));
     AsaApi::GetCommands().RemoveRconCommand(FString(L"unshadowban"));
 
     AsaApi::GetCommands().RemoveOnTimerCallback(FString(L"ShadowBan_Tick"));
