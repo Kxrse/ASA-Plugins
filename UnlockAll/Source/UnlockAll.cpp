@@ -165,6 +165,7 @@ static GroupConfig GetBestGroup(const std::string& eosId)
         for (int i = 0; i < groups.Num(); ++i)
         {
             std::string gName = ToLower(FStr(groups[i]));
+            if (gName == "default") continue;
             auto it = g_groups.find(gName);
             if (it != g_groups.end())
                 return it->second;
