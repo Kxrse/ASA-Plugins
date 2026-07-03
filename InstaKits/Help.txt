@@ -1,0 +1,120 @@
+InstaKits - Config Setup
+========================
+
+Kits are delivered automatically on spawn. A player gets ONE kit: the one
+with the lowest Order among the ranks they hold.
+
+Changes hot-reload within 10 seconds. No restart needed.
+
+
+TOP-LEVEL KEYS
+--------------
+MessageColor      RichColor string for the delivery message. "1.0,1.0,1.0,1.0" = white.
+DeliverMessage    Chat message shown on delivery. Leave "" for silent.
+UnlockTekEngrams  true unlocks tek engrams before equipping so tek gear can be worn.
+DbHost            MariaDB host. Leave as "127.0.0.1".
+DbPort            MariaDB port. Default 3306.
+DbUser            MariaDB username.
+DbPass            MariaDB password.
+DbName            MariaDB database name.
+
+The DB is only used to track one-time kits. Recurring-only setups still need it set.
+
+
+PER-KIT KEYS (inside the "Kits" array)
+--------------------------------------
+Group       The permission rank name that grants this kit (lowercase).
+Order       Rank priority. LOWER number = HIGHER rank.
+            The lowest Order the player qualifies for is the kit they get.
+            On a tie, the first kit in the file wins.
+Recurring   true  = delivered every spawn.
+            false = delivered once per player, ever. Tracked in the DB.
+Items       The list of items for this kit.
+
+
+PER-ITEM KEYS (inside a kit's "Items" array)
+--------------------------------------------
+BlueprintPath   Full blueprint path of the item.
+Quantity        Stack count.
+Quality         Stat magnitude. Drives the stats, NOT the tier label. 0 = base.
+Equip           true wears the item (armor only). Tek gear needs UnlockTekEngrams.
+Slot            Hotbar slot, or -1 for none. See slot numbering below.
+Tier            Displayed tier label. See tier keywords below. "" = leave default.
+
+
+TIER KEYWORDS
+-------------
+Sets the displayed tier label only. Stats still come from Quality.
+Only blueprintable gear shows a tier. Tek armor and resources ignore it.
+
+  primitive     0
+  ramshackle    1
+  apprentice    2
+  journeyman    3
+  mastercraft   4
+  ascendant     5
+
+
+SLOT NUMBERING
+--------------
+Slot uses a 0-based index. Use -1 for no slot.
+
+  Hotbar key 1  ->  Slot 0
+  Hotbar key 2  ->  Slot 1
+  Hotbar key 3  ->  Slot 2
+  Hotbar key 4  ->  Slot 3
+  Hotbar key 5  ->  Slot 4
+  Hotbar key 6  ->  Slot 5
+  Hotbar key 7  ->  Slot 6
+  Hotbar key 8  ->  Slot 7
+  Hotbar key 9  ->  Slot 8
+  Hotbar key 0  ->  Slot 9
+
+
+EXAMPLE
+-------
+{
+    "MessageColor": "1.0,1.0,1.0,1.0",
+    "DeliverMessage": "Your kit has been equipped.",
+    "UnlockTekEngrams": false,
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "user",
+    "DbPass": "pass",
+    "DbName": "database",
+    "Kits": [
+        {
+            "Group": "vip",
+            "Order": 1,
+            "Recurring": false,
+            "Items": [
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponSword.PrimalItem_WeaponSword'",
+                    "Quantity": 1,
+                    "Quality": 40.0,
+                    "Equip": false,
+                    "Slot": 0,
+                    "Tier": "mastercraft"
+                }
+            ]
+        },
+        {
+            "Group": "default",
+            "Order": 2,
+            "Recurring": true,
+            "Items": [
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponStonePick.PrimalItem_WeaponStonePick'",
+                    "Quantity": 1,
+                    "Quality": 0.0,
+                    "Equip": false,
+                    "Slot": 0,
+                    "Tier": ""
+                }
+            ]
+        }
+    ]
+}
+
+In this example a player in both "vip" and "default" gets the vip kit (Order 1),
+once only. A player in just "default" gets the stone pick every spawn.
