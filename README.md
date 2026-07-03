@@ -32,6 +32,7 @@
 | [Blockade](Blockade/) | Released | Cluster-wide combat and raid block state owned by one plugin and shared via database. Combat block on real PvP damage from players, enemy tames, or hostile dinos; positional raid zones from enemy structure damage including C4 and turret fire, covering attackers and defenders alike. EOS immunity list and fully config-driven messages and timings. |
 | [WildLimiter](WildLimiter/) | Released | Prevents or limits wild dino spawns by blueprint match. Hard block despawns listed species, per-species live caps, and per-map overrides that replace the defaults. Admin and GMSummon spawns are left untouched via deferred judgement, and a sweep clears existing matches on a config change. |
 | [ShadowBan](ShadowBan/) | Released | Cluster-wide shadowban that pins a player to a fixed location and teleports them back when they move beyond a set leash distance. Bans are shared across the cluster via database with per-map pins, so a transfer re-pins the player on the new map at the next sync. RCON ONLY. Commands: `shadowban {eos_id}`, `unshadowban {eos_id}`. |
+| [InstaKits](InstaKits/) | Released | Permission-gated kits granted automatically on spawn, highest rank winning when a player holds several. Per-kit recurring or one-time delivery with DB persistence, per-item quality tier, hotbar slot placement, and auto-equip, plus an optional tek engram unlock. Config hot-reload. See [Help.txt](InstaKits/Help.txt) for config setup. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)  
