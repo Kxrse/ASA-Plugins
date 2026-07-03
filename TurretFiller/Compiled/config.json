@@ -2,9 +2,9 @@
     "Database": {
         "Host": "localhost",
         "Port": 3306,
-        "User": "TurretFiller",
-        "Password": "Kxrse1999",
-        "Name": "TurretFiller"
+        "User": "",
+        "Password": "",
+        "Name": ""
     },
     "default": {
         "fill_enabled": true,
@@ -19,12 +19,6 @@
             "max_fill_range": 150,
             "command_cooldown": 15,
             "combat_cooldown": 150
-        },
-        "Admins": {
-            "fill_enabled": true,
-            "max_fill_range": 500,
-            "command_cooldown": 0,
-            "combat_cooldown": 0
         }
     },
     "TurretAmmoMap": {
