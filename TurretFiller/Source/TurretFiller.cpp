@@ -623,6 +623,7 @@ static int RemoveAllAmmoStacks(UPrimalInventoryComponent* inv, const std::string
     {
         UPrimalItem* item = items[i];
         if (!item) continue;
+        if (item->bIsBlueprint()()) continue;
         if (FStr(item->DescriptiveNameBaseField()) != targetName) continue;
         int qty = item->GetItemQuantity();
         if (qty > 0)
@@ -828,7 +829,7 @@ static void Cmd_Fill(AShooterPlayerController* pc, FString*, int, int)
                 false, 0.0f, false,
                 TSubclassOf<UPrimalItem>(),
                 0.0f, false, false, false,
-                false, true
+                false, true, false, AsaApi::GetApiUtils().GetWorld()
             );
 
             if (added)
@@ -849,7 +850,7 @@ static void Cmd_Fill(AShooterPlayerController* pc, FString*, int, int)
                 false, 0.0f, false,
                 TSubclassOf<UPrimalItem>(),
                 0.0f, false, false, false,
-                false, true
+                false, true, false, AsaApi::GetApiUtils().GetWorld()
             );
         }
 

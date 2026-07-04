@@ -1,43 +1,3 @@
-/*
-Kits - ASA Plugin
-
-Author: Kxrse
-Repository: https://github.com/Kxrse/ASA-Plugins
-
-License: Kxrse ASA Plugins Non-Commercial License
-
-You may use, modify, and redistribute this code with attribution.
-Commercial use or resale is not permitted without explicit permission.
-*/
-
-/**
- * Kits - ASA Plugin
- * Permission-gated kit redemption. A kit grants configured items and dino cryopods,
- * gated per rank with per-rank cooldowns and max uses, tracked in MariaDB.
- * Permissions is resolved lazily on first lookup so load order does not matter.
- *
- * Hooks:
- *   AShooterGameMode.Tick(float) - 10 second config hot-reload check
- *
- * Config (ArkApi/Plugins/Kits/config.json):
- *   DbHost DbPort DbUser DbPass DbName - MariaDB connection
- *   CryopodBlueprint         - vanilla cryopod blueprint path
- *   PelayoriCryopodBlueprint - Pelayori cryopod blueprint path
- *   UsePelayoriCryo          - use the Pelayori cryopod instead of vanilla
- *   MessageColor             - RichColor string for player messages
- *   Kits                     - array of Name, Items (BlueprintPath, Quantity, Quality),
- *                              Dinos (BlueprintPath, Level, Neutered),
- *                              Ranks (Group, CooldownSeconds, MaxUses)
- *
- * Table:
- *   kits_usage - PK (eos_id, kit_name)
- *   Columns: eos_id, kit_name, uses, last_redeem
- *
- * Commands:
- *   /kits        - list kits available to the caller
- *   /kit {name}  - redeem a kit
- */
-
 #include <API/ARK/Ark.h>
 #include <json.hpp>
 #include <fstream>
@@ -423,20 +383,28 @@ static void RecordUse(const std::string& eos, const std::string& kitName, long l
 typedef TArray<FString>(*GetPlayerGroups_t)(const FString&);
 static GetPlayerGroups_t pGetPlayerGroups = nullptr;
 static bool g_permissions_loaded = false;
+static bool g_permissions_attempted = false;
 
-static void TryLoadPermissionsAPI()
+static void LoadPermissionsAPI()
 {
-    if (g_permissions_loaded) return;
+    if (g_permissions_attempted) return;
+    g_permissions_attempted = true;
 
     HMODULE hMod = GetModuleHandleA("Permissions");
     if (!hMod)
+    {
+        Log::GetLog()->warn("[Kits] Permissions.dll not found, using Default group");
         return;
+    }
 
     pGetPlayerGroups = (GetPlayerGroups_t)GetProcAddress(hMod,
         "?GetPlayerGroups@Permissions@@YA?AV?$TArray@VFString@@V?$TSizedDefaultAllocator@$0CA@@@@@AEBVFString@@@Z");
 
     if (!pGetPlayerGroups)
+    {
+        Log::GetLog()->warn("[Kits] Failed to resolve Permissions functions");
         return;
+    }
 
     g_permissions_loaded = true;
     Log::GetLog()->info("[Kits] Permissions API loaded");
@@ -445,8 +413,6 @@ static void TryLoadPermissionsAPI()
 static bool GetGroups(const std::string& eosId, std::vector<std::string>& out)
 {
     out.clear();
-
-    TryLoadPermissionsAPI();
 
     if (!g_permissions_loaded)
     {
@@ -694,7 +660,7 @@ static bool GiveDinoCryo(AShooterPlayerController* pc, const DinoEntry& d)
     TSubclassOf<UPrimalItem> noSkin{};
     UPrimalItem* cryoItem = UPrimalItem::AddNewItem(
         cryoSub, nullptr, false, true, 0.0f, true, 1, false, 0.0f, false,
-        noSkin, 0.0f, false, true, true, false, true);
+        noSkin, 0.0f, false, true, true, false, true, false, AsaApi::GetApiUtils().GetWorld());
     if (!cryoItem)
     {
         dino->Destroy(false, false);
@@ -730,7 +696,7 @@ static void GiveItem(AShooterPlayerController* pc, const ItemEntry& it)
     TSubclassOf<UPrimalItem> noSkin{};
     UPrimalItem::AddNewItem(
         itemSub, inv, false, false, it.Quality, false, it.Quantity, false, 0.0f, true,
-        noSkin, 0.0f, false, true, true, true, true);
+        noSkin, 0.0f, false, true, true, true, true, false, AsaApi::GetApiUtils().GetWorld());
 }
 
 static void GiveKit(AShooterPlayerController* pc, const Kit& k)
@@ -782,7 +748,7 @@ static void RedeemKitCommand(AShooterPlayerController* pc, FString* message, int
     size_t sp = msg.find(' ');
     if (sp == std::string::npos)
     {
-        Notify(pc, L"Usage: /kit <n>");
+        Notify(pc, L"Usage: /kit <name>");
         return;
     }
     std::string kitName = msg.substr(sp + 1);
@@ -791,7 +757,7 @@ static void RedeemKitCommand(AShooterPlayerController* pc, FString* message, int
 
     if (kitName.empty())
     {
-        Notify(pc, L"Usage: /kit <n>");
+        Notify(pc, L"Usage: /kit <name>");
         return;
     }
 
@@ -881,6 +847,7 @@ static void PluginInit()
     if (!LoadConfig())
         Log::GetLog()->error("[Kits] Failed to load config");
 
+    LoadPermissionsAPI();
     InitDb();
 
     g_last_config_check = std::chrono::steady_clock::now();

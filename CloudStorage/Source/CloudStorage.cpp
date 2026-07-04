@@ -1012,7 +1012,7 @@ static bool JsonToInventory(UPrimalInventoryComponent* inv, const std::string& b
     TSubclassOf<UPrimalItem> noSkin{};
     UPrimalItem* item = UPrimalItem::AddNewItem(
         itemSub, inv, false, false, 0.0f, false, qty, isBp, 0.0f, true,
-        noSkin, 0.0f, false, true, true, true, true);
+        noSkin, 0.0f, false, true, true, true, true, false, AsaApi::GetApiUtils().GetWorld());
     if (!item) return false;
 
     item->ItemDurabilityField() = j.value("durability", 0.0f);
@@ -1337,7 +1337,7 @@ static void UploadCommand(AShooterPlayerController* pc, FString* message, int, i
                     cls, inv, false, false, 0.0f, false,
                     (int)keep, false, 0.0f, false,
                     TSubclassOf<UPrimalItem>(), 0.0f, false, false, false,
-                    false, true);
+                    false, true, false, AsaApi::GetApiUtils().GetWorld());
             }
         }
     }
@@ -1427,12 +1427,17 @@ static void DownloadCommand(AShooterPlayerController* pc, FString* message, int,
                 Notify(pc, L"No stored item with that id.");
                 return;
             }
+            if (!DeleteInstance(eosId, bestId))
+            {
+                Notify(pc, L"Failed to withdraw that item.");
+                return;
+            }
             if (!JsonToInventory(inv, instBlob))
             {
+                WriteInstance(eosId, instName, instBlob);
                 Notify(pc, L"Failed to rebuild that item.");
                 return;
             }
-            DeleteInstance(eosId, bestId);
 
             const long long usedSlots = GetTotalSlots(eosId) + GetInstanceCount(eosId);
             const int allowance = ResolveSlots(eosId);
@@ -1529,7 +1534,7 @@ static void DownloadCommand(AShooterPlayerController* pc, FString* message, int,
             cls, inv, false, false, 0.0f, false,
             give, false, 0.0f, false,
             TSubclassOf<UPrimalItem>(), 0.0f, false, false, false,
-            false, true);
+            false, true, false, AsaApi::GetApiUtils().GetWorld());
         if (!added) break;
         given += give;
         remaining -= give;
@@ -1779,7 +1784,7 @@ static void DownloadAllCommand(AShooterPlayerController* pc, FString* message, i
             const int give = (int)((remaining < stack) ? remaining : stack);
             UPrimalItem* added = UPrimalItem::AddNewItem(
                 itemSub, inv, false, false, 0.0f, false, give, false, 0.0f, false,
-                noSkin, 0.0f, false, false, false, false, true);
+                noSkin, 0.0f, false, false, false, false, true, false, AsaApi::GetApiUtils().GetWorld());
             if (!added) { capHit = true; break; }
             given += give;
             remaining -= give;
@@ -1801,8 +1806,8 @@ static void DownloadAllCommand(AShooterPlayerController* pc, FString* message, i
         {
             std::string instName, instBlob;
             if (!GetInstanceById(eosId, r.id, instName, instBlob)) continue;
-            if (!JsonToInventory(inv, instBlob)) { capHit = true; break; }
-            DeleteInstance(eosId, r.id);
+            if (!DeleteInstance(eosId, r.id)) continue;
+            if (!JsonToInventory(inv, instBlob)) { WriteInstance(eosId, instName, instBlob); capHit = true; break; }
             movedItems += 1;
         }
     }

@@ -521,7 +521,7 @@ static void GiveItem(AShooterPlayerController* pc, UPrimalInventoryComponent* in
     TSubclassOf<UPrimalItem> noSkin{};
     UPrimalItem* added = UPrimalItem::AddNewItem(
         itemSub, inv, false, false, it.Quality, false, it.Quantity, false, 0.0f, true,
-        noSkin, 0.0f, false, true, true, true, true);
+        noSkin, 0.0f, false, true, true, true, true, false, AsaApi::GetApiUtils().GetWorld());
 
     if (!added) return;
 
