@@ -564,7 +564,6 @@ static UClass* GetAmmoClass(AmmoMapping& mapping)
     if (cls)
     {
         mapping.cachedClass = cls;
-        Log::GetLog()->info("[TurretFiller] Cached ammo class for '{}'", mapping.turretBpSubstring);
     }
     else
     {
@@ -611,13 +610,30 @@ static void Detour_DoFire(APrimalStructureTurret* turret, int shotIndex)
 // Remove All Ammo Stacks By Name — uses inventory RemoveItem(FItemNetID)
 // =============================================================================
 
-static int RemoveAllAmmoStacks(UPrimalInventoryComponent* inv, const std::string& targetName)
+static int CountAmmoInInventory(UPrimalInventoryComponent* inv, const std::string& targetName)
 {
     if (!inv) return 0;
 
     TArray<UPrimalItem*>& items = inv->InventoryItemsField();
-    struct ItemToRemove { FItemNetID id; int qty; };
-    std::vector<ItemToRemove> toRemove;
+    int total = 0;
+    for (int i = 0; i < items.Num(); ++i)
+    {
+        UPrimalItem* item = items[i];
+        if (!item) continue;
+        if (item->bIsBlueprint()()) continue;
+        if (FStr(item->DescriptiveNameBaseField()) != targetName) continue;
+        total += item->GetItemQuantity();
+    }
+    return total;
+}
+
+static void RemoveAmmoQuantity(UPrimalInventoryComponent* inv, const std::string& targetName, int amount)
+{
+    if (!inv || amount <= 0) return;
+
+    TArray<UPrimalItem*>& items = inv->InventoryItemsField();
+    struct AmmoStack { UPrimalItem* item; FItemNetID id; int qty; };
+    std::vector<AmmoStack> stacks;
 
     for (int i = 0; i < items.Num(); ++i)
     {
@@ -627,21 +643,23 @@ static int RemoveAllAmmoStacks(UPrimalInventoryComponent* inv, const std::string
         if (FStr(item->DescriptiveNameBaseField()) != targetName) continue;
         int qty = item->GetItemQuantity();
         if (qty > 0)
+            stacks.push_back({ item, item->ItemIDField(), qty });
+    }
+
+    for (auto& s : stacks)
+    {
+        if (amount <= 0) break;
+        if (s.qty <= amount)
         {
-            FItemNetID id = item->ItemIDField();
-            toRemove.push_back({ id, qty });
+            if (inv->RemoveItem(&s.id, false, false, true, false))
+                amount -= s.qty;
+        }
+        else
+        {
+            s.item->SetQuantity(s.qty - amount, false);
+            amount = 0;
         }
     }
-
-    int totalRemoved = 0;
-    for (auto& entry : toRemove)
-    {
-        bool removed = inv->RemoveItem(&entry.id, false, false, true, false);
-        if (removed)
-            totalRemoved += entry.qty;
-    }
-
-    return totalRemoved;
 }
 
 // =============================================================================
@@ -808,50 +826,49 @@ static void Cmd_Fill(AShooterPlayerController* pc, FString*, int, int)
         UClass* ammoClass = GetAmmoClass(g_ammo_map[group.configIdx]);
         if (!ammoClass) continue;
 
-        int totalRemoved = RemoveAllAmmoStacks(playerInv, ammoName);
-        if (totalRemoved <= 0) continue;
+        int playerPool = CountAmmoInInventory(playerInv, ammoName);
+        if (playerPool <= 0) continue;
 
         int numTurrets = static_cast<int>(group.turrets.size());
-        int perTurret  = totalRemoved / numTurrets;
-        int remainder  = totalRemoved % numTurrets;
+        int remaining = playerPool;
         int distributed = 0;
 
-        for (int t = 0; t < numTurrets; ++t)
+        for (int t = 0; t < numTurrets && remaining > 0; ++t)
         {
-            int share = perTurret + (t < remainder ? 1 : 0);
-            if (share <= 0) continue;
+            int turretsLeft = numTurrets - t;
+            int share = remaining / turretsLeft;
+            if (share <= 0) share = remaining;
 
-            UPrimalItem* added = UPrimalItem::AddNewItem(
-                ammoClass,
-                group.turrets[t].inv,
-                false, false, 0.0f, false,
-                share,
-                false, 0.0f, false,
-                TSubclassOf<UPrimalItem>(),
-                0.0f, false, false, false,
-                false, true, false, AsaApi::GetApiUtils().GetWorld()
-            );
+            UPrimalInventoryComponent* tInv = group.turrets[t].inv;
+            bool filledAny = false;
 
-            if (added)
+            while (share > 0)
             {
-                ++totalFilled;
-                distributed += share;
-            }
-        }
+                int before = CountAmmoInInventory(tInv, ammoName);
 
-        int leftover = totalRemoved - distributed;
-        if (leftover > 0)
-        {
-            UPrimalItem::AddNewItem(
-                ammoClass,
-                playerInv,
-                false, false, 0.0f, false,
-                leftover,
-                false, 0.0f, false,
-                TSubclassOf<UPrimalItem>(),
-                0.0f, false, false, false,
-                false, true, false, AsaApi::GetApiUtils().GetWorld()
-            );
+                UPrimalItem::AddNewItem(
+                    ammoClass,
+                    tInv,
+                    false, false, 0.0f, false,
+                    share,
+                    false, 0.0f, false,
+                    TSubclassOf<UPrimalItem>(),
+                    0.0f, false, false, false,
+                    false, true, false, world
+                );
+
+                int after = CountAmmoInInventory(tInv, ammoName);
+                int added = after - before;
+                if (added <= 0) break;
+
+                RemoveAmmoQuantity(playerInv, ammoName, added);
+                distributed += added;
+                remaining   -= added;
+                share       -= added;
+                filledAny = true;
+            }
+
+            if (filledAny) ++totalFilled;
         }
 
         totalTransferred += distributed;
