@@ -1,0 +1,51 @@
+{
+  "PlayerCaps": {
+    "Health": 40,
+    "Stamina": 40,
+    "Oxygen": 40,
+    "Food": 40,
+    "Water": 40,
+    "Weight": 60,
+    "MeleeDamageMultiplier": 40,
+    "SpeedMultiplier": 34,
+    "TemperatureFortitude": 40,
+    "CraftingSpeedMultiplier": 40
+  },
+  "DinoCaps": {
+    "Health": 60,
+    "Stamina": 60,
+    "Oxygen": 60,
+    "Food": 60,
+    "Weight": 60,
+    "MeleeDamageMultiplier": 60,
+    "SpeedMultiplier": 20
+  },
+  "DinoOverrides": {
+    "Rex_Character_BP_C": {
+      "MeleeDamageMultiplier": 30,
+      "Health": 40
+    },
+    "Giganotosaurus_Character_BP_C": {
+      "Health": 20,
+      "MeleeDamageMultiplier": 20,
+      "Stamina": 20
+    },
+    "Ptero_Character_BP_C": {
+      "SpeedMultiplier": 50,
+      "Weight": -1
+    },
+    "Dodo_Character_BP_C": {
+      "Health": -1,
+      "Stamina": -1,
+      "Oxygen": -1,
+      "Food": -1,
+      "Weight": -1,
+      "MeleeDamageMultiplier": -1,
+      "SpeedMultiplier": -1
+    }
+  },
+  "DeniedMessage": "You cannot put more than {cap} point{s} into {stat}.",
+  "DestroyOverCapDinoOnUncryo": true,
+  "OverCapDestroyMessage": "This dino has more than {cap} point{s} in {stat} and has been destroyed.",
+  "MessageColor": "1.0,0.2,0.2,1.0"
+}
