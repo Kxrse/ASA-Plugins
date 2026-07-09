@@ -1,3 +1,34 @@
+/*
+Kits - ASA Plugin
+
+Author: Kxrse
+Repository: https://github.com/Kxrse/ASA-Plugins
+
+License: Kxrse ASA Plugins Non-Commercial License
+
+You may use, modify, and redistribute this code with attribution.
+Commercial use or resale is not permitted without explicit permission.
+*/
+
+/**
+ * Kits - ASA Plugin
+ *
+ * Hooks:
+ *   AShooterGameMode.Tick(float) - hot-reloads config every 10 seconds
+ *
+ * Config:
+ *   DbHost, DbPort, DbUser, DbPass, DbName - MariaDB connection for kits_usage
+ *   CryopodBlueprint, PelayoriCryopodBlueprint, UsePelayoriCryo - cryopod item used for kit dinos
+ *   MessageColor - RichColor value applied to all chat notifications
+ *   Kits - named kits with Number, Items, Dinos, and per group Ranks (CooldownSeconds, MaxUses)
+ *
+ * Grants configured item and dino kits through /kits and /kit, gated by Permissions
+ * groups with per group cooldowns and use caps persisted in MariaDB. Each kit may carry a
+ * unique Number so players can redeem with /kit 1 as well as /kit name. Item quantities
+ * larger than the server stack size are split across multiple stacks. Dinos are spawned,
+ * serialised into a cryopod, then destroyed so the player receives a cryopodded dino.
+ */
+
 #include <API/ARK/Ark.h>
 #include <json.hpp>
 #include <fstream>
@@ -8,6 +39,7 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <cctype>
+#include <algorithm>
 
 #pragma comment(lib, "AsaApi.lib")
 #pragma warning(disable: 4191)
@@ -117,6 +149,7 @@ struct RankAccess
 struct Kit
 {
     std::string Name;
+    int Number = 0;
     std::vector<ItemEntry> Items;
     std::vector<DinoEntry> Dinos;
     std::vector<RankAccess> Ranks;
@@ -153,6 +186,14 @@ static std::string ToLower(const std::string& in)
     std::string out = in;
     for (char& c : out) c = (char)std::tolower((unsigned char)c);
     return out;
+}
+
+static bool IsAllDigits(const std::string& in)
+{
+    if (in.empty() || in.size() > 9) return false;
+    for (char c : in)
+        if (!std::isdigit((unsigned char)c)) return false;
+    return true;
 }
 
 static std::string GetEos(AShooterPlayerController* pc)
@@ -212,6 +253,23 @@ static bool LoadConfig()
                 Kit k;
                 k.Name = kj.value("Name", std::string(""));
                 if (k.Name.empty()) continue;
+
+                k.Number = kj.value("Number", 0);
+                if (k.Number < 0) k.Number = 0;
+
+                if (k.Number > 0)
+                {
+                    for (const auto& existing : newKits)
+                    {
+                        if (existing.Number == k.Number)
+                        {
+                            Log::GetLog()->warn("[Kits] Duplicate Number {} on kit '{}', already used by '{}', kit is name only",
+                                k.Number, k.Name, existing.Name);
+                            k.Number = 0;
+                            break;
+                        }
+                    }
+                }
 
                 if (kj.contains("Items") && kj["Items"].is_array())
                 {
@@ -454,6 +512,15 @@ static const Kit* FindKit(const std::string& name)
     return nullptr;
 }
 
+static const Kit* FindKitByNumber(int number)
+{
+    if (number <= 0) return nullptr;
+    for (const auto& k : g_kits)
+        if (k.Number == number)
+            return &k;
+    return nullptr;
+}
+
 static void Notify(AShooterPlayerController* pc, const std::wstring& msg)
 {
     const std::wstring wColor(g_message_color.begin(), g_message_color.end());
@@ -692,11 +759,37 @@ static void GiveItem(AShooterPlayerController* pc, const ItemEntry& it)
         return;
     }
 
+    UWorld* world = AsaApi::GetApiUtils().GetWorld();
+
+    int remaining = it.Quantity > 0 ? it.Quantity : 1;
+    int stack = remaining;
+
+    UPrimalItem* cdo = static_cast<UPrimalItem*>(itemClass->GetDefaultObject(true));
+    if (cdo)
+    {
+        const int maxStack = cdo->GetMaxItemQuantity(reinterpret_cast<UObject*>(world));
+        if (maxStack > 0) stack = maxStack;
+    }
+
     TSubclassOf<UPrimalItem> itemSub = itemClass;
     TSubclassOf<UPrimalItem> noSkin{};
-    UPrimalItem::AddNewItem(
-        itemSub, inv, false, false, it.Quality, false, it.Quantity, false, 0.0f, true,
-        noSkin, 0.0f, false, true, true, true, true, false, AsaApi::GetApiUtils().GetWorld());
+
+    while (remaining > 0)
+    {
+        const int give = remaining > stack ? stack : remaining;
+
+        UPrimalItem* added = UPrimalItem::AddNewItem(
+            itemSub, inv, false, false, it.Quality, false, give, false, 0.0f, true,
+            noSkin, 0.0f, false, true, true, true, true, false, world);
+
+        if (!added)
+        {
+            Log::GetLog()->warn("[Kits] AddNewItem returned null for '{}', {} undelivered", it.BlueprintPath, remaining);
+            return;
+        }
+
+        remaining -= give;
+    }
 }
 
 static void GiveKit(AShooterPlayerController* pc, const Kit& k)
@@ -720,18 +813,30 @@ static void ListKitsCommand(AShooterPlayerController* pc, FString* message, int,
         return;
     }
 
-    std::string list;
+    std::vector<const Kit*> allowed;
     for (const auto& k : g_kits)
-    {
-        if (!ResolveRank(k, groups)) continue;
-        if (!list.empty()) list += ", ";
-        list += k.Name;
-    }
+        if (ResolveRank(k, groups))
+            allowed.push_back(&k);
 
-    if (list.empty())
+    if (allowed.empty())
     {
         Notify(pc, L"You have no kits available.");
         return;
+    }
+
+    std::stable_sort(allowed.begin(), allowed.end(), [](const Kit* a, const Kit* b)
+    {
+        const int an = a->Number > 0 ? a->Number : INT_MAX;
+        const int bn = b->Number > 0 ? b->Number : INT_MAX;
+        return an < bn;
+    });
+
+    std::string list;
+    for (const Kit* k : allowed)
+    {
+        if (!list.empty()) list += ", ";
+        if (k->Number > 0) list += std::to_string(k->Number) + ": ";
+        list += k->Name;
     }
 
     std::string out = "Kits available to you: " + list;
@@ -748,20 +853,20 @@ static void RedeemKitCommand(AShooterPlayerController* pc, FString* message, int
     size_t sp = msg.find(' ');
     if (sp == std::string::npos)
     {
-        Notify(pc, L"Usage: /kit <name>");
+        Notify(pc, L"Usage: /kit <number or name>");
         return;
     }
-    std::string kitName = msg.substr(sp + 1);
-    while (!kitName.empty() && kitName.front() == ' ') kitName.erase(kitName.begin());
-    while (!kitName.empty() && (kitName.back() == ' ' || kitName.back() == '\r' || kitName.back() == '\n')) kitName.pop_back();
+    std::string arg = msg.substr(sp + 1);
+    while (!arg.empty() && arg.front() == ' ') arg.erase(arg.begin());
+    while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\r' || arg.back() == '\n')) arg.pop_back();
 
-    if (kitName.empty())
+    if (arg.empty())
     {
-        Notify(pc, L"Usage: /kit <name>");
+        Notify(pc, L"Usage: /kit <number or name>");
         return;
     }
 
-    const Kit* k = FindKit(kitName);
+    const Kit* k = IsAllDigits(arg) ? FindKitByNumber(std::atoi(arg.c_str())) : FindKit(arg);
     if (!k)
     {
         Notify(pc, L"That kit does not exist.");

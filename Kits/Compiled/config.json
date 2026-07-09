@@ -11,6 +11,7 @@
   "Kits": [
     {
       "Name": "starter",
+	  "Number": 1,
       "Items": [
         { "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_CookedMeat.PrimalItemConsumable_CookedMeat'", "Quantity": 20, "Quality": 0 }
       ],
