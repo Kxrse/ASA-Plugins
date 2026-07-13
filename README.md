@@ -6,7 +6,7 @@
 | Plugin | Status | Description |
 |---|---|---|
 | [EnhancedTeleporting](EnhancedTeleporting/) | Untested | Home teleport system with per-tier permissions and foundation checks. Reads cluster combat and raid block state from Blockade, gated by independent config toggles. Commands: `/sethome`, `/home`, `/delhome`, `/listhome`, `/tpr`, `/tpa`, `/tpc`. |
-| [AutoAdmin](AutoAdmin/) | Untested | Per-admin config with enable/disable, command whitelisting, ForceOnSpawn commands, cheat blocking, and live config hot-reload with automatic kick on permission downgrade. |
+| [AutoAdmin](AutoAdmin/) | Released | Per-admin config with enable/disable, command whitelisting, ForceOnSpawn commands, cheat blocking, and live config hot-reload with automatic kick on permission downgrade. |
 | [DinoPainter](DinoPainter/) | Untested | Paint tribe dinos by region or in bulk using saved presets. Permission-gated with per-group radius limits. Commands: `/paint`, `/paintall`, `/savepaint`, `/paintpresets`, `/paintdel`. |
 | [AutoDoors](AutoDoors/) | Untested | Automatically closes doors, hatches, and trapdoors after a configurable delay. Per-player toggle and custom delay with DB persistence. Commands: `/ad`, `/ad {seconds}`. |
 | [TurretFiller](TurretFiller/) | Untested | Fills nearby auto, heavy, and tek turrets with ammo from player inventory using balanced distribution. Per-player DB-persistent fill range, per-turret combat cooldown, mounted support, and permission-gated group tiers. Commands: `/fill`, `/fillrange`. |
@@ -16,7 +16,7 @@
 | [TribeWarden](TribeWarden/) | Untested | Forces all players to always be in a tribe and automatically creates a solo tribe for any tribeless player. |
 | [SurvivorStats](SurvivorStats/) | Untested | Tracks per-character stats including level, kills, and deaths to a database. |
 | [ResourceStats](ResourceStats/) | Untested | Tracks per-character harvested resource totals to a database. |
-| [StructureStats](StructureStats/) | Untested | Tracks per-character and per-tribe structure placements and destructions to a database. |
+| [StructureStats](StructureStats/) | Released | Tracks per-character and per-tribe structure placements and destructions to a database. |
 | [LinkInChat](LinkInChat/) | Untested | Allows admins to configure custom `/commands` that respond with a configured message in chat, with cooldown support. |
 | [HarvestScale](HarvestScale/) | Untested | Scales harvest rates based on tribe size per map using config-driven rate tiers. |
 | [UnlockAll](UnlockAll/) | Untested | Automatically unlocks engrams, tek engrams, Lost Colony skills, and explorer notes on spawn. Permission-gated with per-group toggles and Lost Colony DLC ownership check. |
