@@ -1,29 +1,29 @@
 {
-    "AdminPassword": "adminpassword",
+    "AdminPassword": "Password",
+    "ActivationDelaySeconds": 10,
+    "RevokePermissionsOnDowngrade": true,
+    "PermissionsAdminGroup": "Admins",
     "Admins": [
         {
-            "Alias": "Kxrse",
-            "EosId": "eosid",
+            "Alias": "Owner",
+            "EosId": "EOS_ID",
             "Enabled": true,
-            "UseAllCommands": false,
+            "UseAllCommands": true,
             "ForceOnSpawn": {
-                "cheat gcm": false,
-                "cheat enablespectator 1": false
+                "gcm": true
             },
             "WhitelistedCommands": []
         },
         {
-            "Alias": "Other Account",
-            "EosId": "eosid",
-            "Enabled": false,
+            "Alias": "Mod",
+            "EosId": "EOS_ID",
+            "Enabled": true,
             "UseAllCommands": false,
-            "ForceOnSpawn": {
-                "cheat gcm": false
-            },
+            "ForceOnSpawn": {},
             "WhitelistedCommands": [
-			"cheat gcm",
-			"cheat ghost"
-			]
+                "cheat fly",
+                "cheat walk"
+            ]
         }
     ]
 }

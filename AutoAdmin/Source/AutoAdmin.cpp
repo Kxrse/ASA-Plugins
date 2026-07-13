@@ -14,37 +14,92 @@ Commercial use or resale is not permitted without explicit permission.
  * AutoAdmin - ASA Plugin
  *
  * Hooks:
- *   AShooterGameMode.PostLogin — queues existing characters for admin grant
- *   AShooterPlayerController.HandleRespawned_Implementation — queues new spawns for admin grant
- *   AShooterGameMode.Tick — processes pending grants after 10s delay, processes pending kicks, hot-reloads config every 10s
- *   ABasePlayerController.ServerCheat_Implementation — blocks cheat commands for restricted admins unless whitelisted
- *   AShooterGameMode.Logout — cleans up granted state
+ *   AShooterGameMode.PostLogin                                     queue existing characters for admin grant
+ *   AShooterPlayerController.HandleRespawned_Implementation        queue new spawns for admin grant
+ *   AShooterGameMode.Tick                                          process pending grants after the configured delay, process pending kicks, hot-reload config every 10s
+ *   ABasePlayerController.ServerCheat_Implementation               block cheat commands for restricted admins unless whitelisted
+ *   AShooterPlayerController.RemoteServerCheat_Implementation      same block applied to the remote cheat path
+ *   AShooterGameMode.Logout                                        clean up granted state on disconnect
+ *
+ * Dependencies:
+ *   Permissions (optional). Resolved lazily via GetProcAddress from a loaded Permissions.dll,
+ *   never statically linked. Only RemovePlayerFromGroup is used, to pull AutoAdmin-granted
+ *   players from the admin group when they are downgraded. If Permissions.dll is absent the
+ *   feature is skipped with a single warning.
  *
  * Config:
  *   ArkApi/Plugins/AutoAdmin/config.json
  *   AdminPassword: server admin password string
- *   Admins: array of admin objects with ForceOnSpawn map and WhitelistedCommands array
+ *   ActivationDelaySeconds: seconds between spawn and admin activation (default 10)
+ *   RevokePermissionsOnDowngrade: remove downgraded admins from the Permissions group (default true)
+ *   PermissionsAdminGroup: Permissions group to remove downgraded admins from (default "Admins")
+ *   Admins: array of admin objects with Alias, EosId, Enabled, UseAllCommands, ForceOnSpawn map, WhitelistedCommands array
+ *
+ * Config Example:
+ * {
+ *     "AdminPassword": "Password",
+ *     "ActivationDelaySeconds": 10,
+ *     "RevokePermissionsOnDowngrade": true,
+ *     "PermissionsAdminGroup": "Admins",
+ *     "Admins": [
+ *         {
+ *             "Alias": "Owner",
+ *             "EosId": "EOS_ID",
+ *             "Enabled": true,
+ *             "UseAllCommands": true,
+ *             "ForceOnSpawn": {
+ *                 "gcm": true
+ *             },
+ *             "WhitelistedCommands": []
+ *         },
+ *         {
+ *             "Alias": "Mod",
+ *             "EosId": "EOS_ID",
+ *             "Enabled": true,
+ *             "UseAllCommands": false,
+ *             "ForceOnSpawn": {},
+ *             "WhitelistedCommands": [
+ *                 "cheat fly",
+ *                 "cheat walk"
+ *             ]
+ *         }
+ *     ]
+ * }
  *
  * Command blocking:
- *   ServerCheat_Implementation receives commands without "cheat " prefix (e.g. "gcm" not "cheat gcm").
+ *   Cheat hooks receive commands without the "cheat " prefix (e.g. "gcm" not "cheat gcm").
  *   Plugin prepends "cheat " for whitelist matching against config entries.
+ *   Both the direct and remote cheat paths route through one shared gate.
+ *   Restricted admins cannot chain commands: any '|' or control character is blocked before whitelist matching.
+ *
+ * Hot-reload:
+ *   config.json rescanned every 10 seconds via size + last-write-time. Size 0 or locked files are rejected.
+ *   Downgraded or removed admins are revoked from the Permissions group (if granted by AutoAdmin), then kicked.
+ *   Newly enabled online admins are queued for grant.
+ *   Kicks resolve the controller via FindPlayerFromEOSID then KickPlayerController.
  */
 
 #include <API/ARK/Ark.h>
+
+#pragma warning(disable: 4191)
+#pragma comment(lib, "AsaApi.lib")
+
 #include <json.hpp>
+#include <Windows.h>
 #include <fstream>
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <chrono>
-#include <sys/stat.h>
+#include <filesystem>
+#include <optional>
 #include <algorithm>
 #include <cctype>
 
- // =============================================================================
- // Configuration
- // =============================================================================
+// =============================================================================
+// Configuration
+// =============================================================================
 
 struct AdminEntry
 {
@@ -58,26 +113,32 @@ struct AdminEntry
 
 static const std::string g_config_path = "ArkApi/Plugins/AutoAdmin/config.json";
 static std::string g_admin_password;
+static int         g_activation_delay_seconds = 10;
+static bool        g_revoke_permissions_on_downgrade = true;
+static std::string g_permissions_admin_group = "Admins";
 static std::unordered_map<std::string, AdminEntry> g_admins;
 static std::unordered_map<std::string, AdminEntry> g_prev_admins;
-static time_t g_config_last_modified = 0;
+static std::uintmax_t                  g_cfg_size = 0;
+static std::filesystem::file_time_type g_cfg_mtime{};
 
 static std::unordered_set<std::string> g_granted;
 static std::unordered_set<std::string> g_pending_kicks;
-
-static time_t GetFileModTime(const std::string& path)
-{
-    struct _stat st {};
-    if (_stat(path.c_str(), &st) == 0)
-        return st.st_mtime;
-    return 0;
-}
 
 static std::string ToLower(const std::string& in)
 {
     std::string out = in;
     for (char& c : out) c = (char)std::tolower((unsigned char)c);
     return out;
+}
+
+static void CaptureConfigStamp()
+{
+    try
+    {
+        g_cfg_size = std::filesystem::file_size(g_config_path);
+        g_cfg_mtime = std::filesystem::last_write_time(g_config_path);
+    }
+    catch (...) {}
 }
 
 static bool LoadConfig()
@@ -95,6 +156,12 @@ static bool LoadConfig()
         file >> j;
 
         g_admin_password = j.value("AdminPassword", "");
+        g_activation_delay_seconds = j.value("ActivationDelaySeconds", 10);
+        if (g_activation_delay_seconds < 0)
+            g_activation_delay_seconds = 0;
+
+        g_revoke_permissions_on_downgrade = j.value("RevokePermissionsOnDowngrade", true);
+        g_permissions_admin_group = j.value("PermissionsAdminGroup", "Admins");
 
         std::unordered_map<std::string, AdminEntry> newAdmins;
         if (j.contains("Admins") && j["Admins"].is_array())
@@ -134,7 +201,6 @@ static bool LoadConfig()
 
         g_prev_admins = g_admins;
         g_admins = std::move(newAdmins);
-        g_config_last_modified = GetFileModTime(g_config_path);
     }
     catch (const std::exception& ex)
     {
@@ -148,14 +214,16 @@ static bool LoadConfig()
         return false;
     }
 
+    CaptureConfigStamp();
+
     int enabledCount = 0;
     for (const auto& [id, admin] : g_admins)
     {
         if (admin.enabled) ++enabledCount;
     }
 
-    Log::GetLog()->info("[AutoAdmin] Config loaded: {} admin(s), {} enabled",
-        g_admins.size(), enabledCount);
+    Log::GetLog()->info("[AutoAdmin] Config loaded: {} admin(s), {} enabled, activation delay {}s",
+        g_admins.size(), enabledCount, g_activation_delay_seconds);
     return true;
 }
 
@@ -169,12 +237,16 @@ static std::string FStr(const FString& f)
     return (s && s[0]) ? s : "";
 }
 
+static FString ToFString(const std::string& s)
+{
+    return FString(UTF8_TO_TCHAR(s.c_str()));
+}
+
 static bool g_bypass_block = false;
 
 static void RunConsoleCommand(AShooterPlayerController* spc, const std::string& cmd)
 {
-    const std::wstring wCmd(cmd.begin(), cmd.end());
-    FString fCmd(wCmd.c_str());
+    FString fCmd = ToFString(cmd);
     FString result;
     g_bypass_block = true;
     spc->ConsoleCommand(&result, &fCmd, false);
@@ -191,6 +263,16 @@ static std::string GetEosFromController(APlayerController* pc)
     ps->GetUniqueNetIdAsString(&eosRaw);
     const std::string eosId = FStr(eosRaw);
     return (eosId == "unknown") ? "" : eosId;
+}
+
+static bool HasChainOrControlChar(const std::string& raw)
+{
+    for (unsigned char c : raw)
+    {
+        if (c == '|') return true;
+        if (c < 0x20) return true;
+    }
+    return false;
 }
 
 static bool IsCommandWhitelisted(const std::string& lowerCmd, const std::vector<std::string>& whitelist)
@@ -232,6 +314,107 @@ static bool AnyFlagDowngraded(const AdminEntry& oldEntry, const AdminEntry& newE
     return false;
 }
 
+static bool ShouldBlockCheat(APlayerController* pc, const FString* Msg)
+{
+    if (!pc || !Msg) return false;
+
+    const std::string eosId = GetEosFromController(pc);
+    if (eosId.empty()) return false;
+
+    auto it = g_admins.find(eosId);
+    if (it == g_admins.end() || !it->second.enabled || it->second.useAllCommands)
+        return false;
+
+    const std::string rawCmd = FStr(*Msg);
+
+    bool blocked = false;
+    if (HasChainOrControlChar(rawCmd))
+    {
+        blocked = true;
+    }
+    else
+    {
+        const std::string lowerCmd = "cheat " + ToLower(rawCmd);
+        if (IsCommandWhitelisted(lowerCmd, it->second.whitelistedCommands))
+            return false;
+        blocked = true;
+    }
+
+    if (!blocked) return false;
+
+    Log::GetLog()->info("[AutoAdmin] Blocked command from {} ({}): {}",
+        it->second.alias, eosId, rawCmd);
+
+    if (pc->IsA(AShooterPlayerController::StaticClass()))
+    {
+        AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(pc);
+        FLinearColor red{ 1.0f, 0.0f, 0.0f, 1.0f };
+        AsaApi::GetApiUtils().SendNotification(spc, red, 1.5f, 5.0f, nullptr,
+            L"YOU AREN'T ALLOWED TO USE THIS COMMAND!");
+    }
+
+    return true;
+}
+
+// =============================================================================
+// Permissions Dependency (lazy)
+// =============================================================================
+
+typedef std::optional<std::string>(*RemovePlayerFromGroup_t)(const FString&, const FString&);
+
+static const char* kPermRemovePlayerFromGroup =
+    "?RemovePlayerFromGroup@Permissions@@YA?AV?$optional@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@std@@AEBVFString@@0@Z";
+
+static RemovePlayerFromGroup_t p_RemovePlayerFromGroup = nullptr;
+static bool g_perm_resolved = false;
+static bool g_perm_logged_missing = false;
+
+static bool LoadPermissionsApi()
+{
+    if (g_perm_resolved)
+        return p_RemovePlayerFromGroup != nullptr;
+
+    HMODULE permModule = GetModuleHandleA("Permissions.dll");
+    if (!permModule)
+    {
+        if (!g_perm_logged_missing)
+        {
+            Log::GetLog()->warn("[AutoAdmin] Permissions.dll not loaded, group revoke skipped");
+            g_perm_logged_missing = true;
+        }
+        return false;
+    }
+
+    p_RemovePlayerFromGroup =
+        (RemovePlayerFromGroup_t)GetProcAddress(permModule, kPermRemovePlayerFromGroup);
+
+    g_perm_resolved = true;
+
+    if (!p_RemovePlayerFromGroup)
+    {
+        Log::GetLog()->error("[AutoAdmin] Failed to resolve Permissions RemovePlayerFromGroup");
+        return false;
+    }
+
+    return true;
+}
+
+static void RevokePermissionsAdmin(const std::string& eosId)
+{
+    if (!g_revoke_permissions_on_downgrade) return;
+    if (eosId.empty()) return;
+    if (!LoadPermissionsApi()) return;
+
+    FString fEos = ToFString(eosId);
+    FString fGroup = ToFString(g_permissions_admin_group);
+
+    std::optional<std::string> ret = p_RemovePlayerFromGroup(fEos, fGroup);
+    if (ret.has_value())
+        Log::GetLog()->warn("[AutoAdmin] Permissions revoke for {} returned: {}", eosId, ret.value());
+    else
+        Log::GetLog()->info("[AutoAdmin] Removed {} from Permissions group {}", eosId, g_permissions_admin_group);
+}
+
 // =============================================================================
 // Pending Queue
 // =============================================================================
@@ -246,13 +429,15 @@ using PostLogin_t = void(*)(AShooterGameMode*, APlayerController*);
 using HandleRespawned_t = void(*)(AShooterPlayerController*, APawn*, bool);
 using Tick_t = void(*)(AShooterGameMode*, float);
 using ServerCheat_t = void(*)(ABasePlayerController*, const FString*);
+using RemoteServerCheat_t = void(*)(AShooterPlayerController*, const FString*);
 using Logout_t = void(*)(AShooterGameMode*, AController*);
 
-static PostLogin_t       Original_PostLogin = nullptr;
-static HandleRespawned_t Original_HandleRespawned = nullptr;
-static Tick_t            Original_Tick = nullptr;
-static ServerCheat_t     Original_ServerCheat = nullptr;
-static Logout_t          Original_Logout = nullptr;
+static PostLogin_t         Original_PostLogin = nullptr;
+static HandleRespawned_t   Original_HandleRespawned = nullptr;
+static Tick_t              Original_Tick = nullptr;
+static ServerCheat_t       Original_ServerCheat = nullptr;
+static RemoteServerCheat_t Original_RemoteServerCheat = nullptr;
+static Logout_t            Original_Logout = nullptr;
 
 // =============================================================================
 // Shared Queue Helper
@@ -306,6 +491,8 @@ static void SyncOnlinePlayersAfterReload()
             else
                 alias = eosId;
 
+            RevokePermissionsAdmin(eosId);
+
             g_pending_kicks.insert(eosId);
             Log::GetLog()->info("[AutoAdmin] Queued kick for {} ({}) due to config downgrade", alias, eosId);
         }
@@ -317,8 +504,7 @@ static void SyncOnlinePlayersAfterReload()
         if (g_granted.count(eosId)) continue;
         if (g_pending_kicks.count(eosId)) continue;
 
-        const std::wstring wEos(eosId.begin(), eosId.end());
-        FString fEos(wEos.c_str());
+        FString fEos = ToFString(eosId);
         AShooterPlayerController* spc =
             AsaApi::GetApiUtils().FindPlayerFromEOSID(fEos);
 
@@ -338,7 +524,8 @@ static void SyncOnlinePlayersAfterReload()
 void Detour_PostLogin(AShooterGameMode* gm, APlayerController* pc)
 {
     Original_PostLogin(gm, pc);
-    QueueIfAdmin(static_cast<AShooterPlayerController*>(pc));
+    if (pc && pc->IsA(AShooterPlayerController::StaticClass()))
+        QueueIfAdmin(static_cast<AShooterPlayerController*>(pc));
 }
 
 void Detour_HandleRespawned(AShooterPlayerController* spc, APawn* pawn, bool bNewPlayer)
@@ -355,43 +542,29 @@ void Detour_ServerCheat(ABasePlayerController* bpc, const FString* Msg)
         return;
     }
 
-    if (bpc && Msg)
-    {
-        const std::string eosId = GetEosFromController(bpc);
-
-        if (!eosId.empty())
-        {
-            auto it = g_admins.find(eosId);
-            if (it != g_admins.end() && it->second.enabled && !it->second.useAllCommands)
-            {
-                const std::string rawCmd = FStr(*Msg);
-                const std::string lowerCmd = "cheat " + ToLower(rawCmd);
-
-                if (IsCommandWhitelisted(lowerCmd, it->second.whitelistedCommands))
-                {
-                    Original_ServerCheat(bpc, Msg);
-                    return;
-                }
-
-                Log::GetLog()->info("[AutoAdmin] Blocked command from {} ({}): {}",
-                    it->second.alias, eosId, rawCmd);
-
-                AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(bpc);
-                FLinearColor red{ 1.0f, 0.0f, 0.0f, 1.0f };
-                AsaApi::GetApiUtils().SendNotification(spc, red, 1.5f, 5.0f, nullptr,
-                    L"YOU AREN'T ALLOWED TO USE THIS COMMAND!");
-
-                return;
-            }
-        }
-    }
+    if (ShouldBlockCheat(bpc, Msg))
+        return;
 
     Original_ServerCheat(bpc, Msg);
 }
 
+void Detour_RemoteServerCheat(AShooterPlayerController* spc, const FString* Msg)
+{
+    if (g_bypass_block)
+    {
+        Original_RemoteServerCheat(spc, Msg);
+        return;
+    }
+
+    if (ShouldBlockCheat(spc, Msg))
+        return;
+
+    Original_RemoteServerCheat(spc, Msg);
+}
+
 void Detour_Logout(AShooterGameMode* gm, AController* controller)
 {
-    if (controller)
+    if (controller && controller->IsA(AShooterPlayerController::StaticClass()))
     {
         AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(controller);
         const std::string eosId = GetEosFromController(spc);
@@ -412,7 +585,6 @@ void Detour_Tick(AShooterGameMode* gm, float delta)
 {
     Original_Tick(gm, delta);
 
-    // Process pending kicks first
     if (!g_pending_kicks.empty())
     {
         std::unordered_set<std::string> kicksCopy;
@@ -420,20 +592,28 @@ void Detour_Tick(AShooterGameMode* gm, float delta)
 
         for (const auto& eosId : kicksCopy)
         {
-            const std::wstring wEos(eosId.begin(), eosId.end());
-            FString fEos(wEos.c_str());
-            gm->KickPlayer(&fEos);
+            FString fEos = ToFString(eosId);
+            AShooterPlayerController* spc =
+                AsaApi::GetApiUtils().FindPlayerFromEOSID(fEos);
+
+            if (spc)
+            {
+                FString reason = L"Admin access revoked";
+                AsaApi::GetApiUtils().GetShooterGameMode()->KickPlayerController(spc, reason);
+                Log::GetLog()->info("[AutoAdmin] Kicked admin ({})", eosId);
+            }
+            else
+            {
+                Log::GetLog()->warn("[AutoAdmin] Kick skipped, player not found for eos_id={}", eosId);
+            }
 
             g_granted.erase(eosId);
             g_pending.erase(eosId);
-
-            Log::GetLog()->info("[AutoAdmin] Kicked admin ({})", eosId);
         }
 
         return;
     }
 
-    // Process pending admin grants (10 second delay)
     if (!g_pending.empty())
     {
         const auto now = std::chrono::steady_clock::now();
@@ -443,14 +623,13 @@ void Detour_Tick(AShooterGameMode* gm, float delta)
             const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 now - it->second).count();
 
-            if (elapsed < 10)
+            if (elapsed < g_activation_delay_seconds)
             {
                 ++it;
                 continue;
             }
 
-            const std::wstring wEos(it->first.begin(), it->first.end());
-            FString fEos(wEos.c_str());
+            FString fEos = ToFString(it->first);
 
             AShooterPlayerController* spc =
                 AsaApi::GetApiUtils().FindPlayerFromEOSID(fEos);
@@ -489,18 +668,25 @@ void Detour_Tick(AShooterGameMode* gm, float delta)
         }
     }
 
-    // Check config for changes every 10 seconds
     g_config_check_accumulator += delta;
     if (g_config_check_accumulator >= 10.0f)
     {
         g_config_check_accumulator = 0.0f;
 
-        const time_t modTime = GetFileModTime(g_config_path);
-        if (modTime != 0 && modTime != g_config_last_modified)
+        std::uintmax_t size = 0;
+        std::filesystem::file_time_type mtime{};
+        try
+        {
+            size = std::filesystem::file_size(g_config_path);
+            mtime = std::filesystem::last_write_time(g_config_path);
+        }
+        catch (...) { size = 0; }
+
+        if (size != 0 && (size != g_cfg_size || mtime != g_cfg_mtime))
         {
             Log::GetLog()->info("[AutoAdmin] Config change detected, reloading...");
-            LoadConfig();
-            SyncOnlinePlayersAfterReload();
+            if (LoadConfig())
+                SyncOnlinePlayersAfterReload();
         }
     }
 }
@@ -509,7 +695,7 @@ void Detour_Tick(AShooterGameMode* gm, float delta)
 // Plugin Entry Points
 // =============================================================================
 
-extern "C" __declspec(dllexport) void Plugin_Init()
+static void InitImpl()
 {
     Log::Get().Init("AutoAdmin");
 
@@ -544,6 +730,12 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     );
 
     AsaApi::GetHooks().SetHook(
+        "AShooterPlayerController.RemoteServerCheat_Implementation(FString&)",
+        (LPVOID)&Detour_RemoteServerCheat,
+        (LPVOID*)&Original_RemoteServerCheat
+    );
+
+    AsaApi::GetHooks().SetHook(
         "AShooterGameMode.Logout(AController*)",
         (LPVOID)&Detour_Logout,
         (LPVOID*)&Original_Logout
@@ -552,11 +744,16 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     Log::GetLog()->info("[AutoAdmin] Plugin loaded");
 }
 
-extern "C" __declspec(dllexport) void Plugin_Unload()
+static void UnloadImpl()
 {
     AsaApi::GetHooks().DisableHook(
         "ABasePlayerController.ServerCheat_Implementation(FString&)",
         (LPVOID)&Detour_ServerCheat
+    );
+
+    AsaApi::GetHooks().DisableHook(
+        "AShooterPlayerController.RemoteServerCheat_Implementation(FString&)",
+        (LPVOID)&Detour_RemoteServerCheat
     );
 
     AsaApi::GetHooks().DisableHook(
@@ -585,4 +782,30 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     g_pending_kicks.clear();
 
     Log::GetLog()->info("[AutoAdmin] Plugin unloaded");
+}
+
+extern "C" __declspec(dllexport) void Plugin_Init()
+{
+    try { InitImpl(); }
+    catch (const std::exception& ex)
+    {
+        Log::GetLog()->error("[AutoAdmin] Plugin_Init exception: {}", ex.what());
+    }
+    catch (...)
+    {
+        Log::GetLog()->error("[AutoAdmin] Plugin_Init unknown exception");
+    }
+}
+
+extern "C" __declspec(dllexport) void Plugin_Unload()
+{
+    try { UnloadImpl(); }
+    catch (const std::exception& ex)
+    {
+        Log::GetLog()->error("[AutoAdmin] Plugin_Unload exception: {}", ex.what());
+    }
+    catch (...)
+    {
+        Log::GetLog()->error("[AutoAdmin] Plugin_Unload unknown exception");
+    }
 }
