@@ -12,7 +12,7 @@
 | [TurretFiller](TurretFiller/) | Untested | Fills nearby auto, heavy, and tek turrets with ammo from player inventory using balanced distribution. Per-player DB-persistent fill range, per-turret combat cooldown, mounted support, and permission-gated group tiers. Commands: `/fill`, `/fillrange`. |
 | [TurretFPS](TurretFPS/) | Untested | Suppresses tek turret projectile and impact effects to reduce client particle load. Damage is unaffected; auto and heavy turrets are not changed. |
 | [TidyDams](TidyDams/) | Untested | Automatically destroys beaver dams when a player closes the inventory and anything apart from Cementing Paste remains inside. |
-| [SurvivorTracker](SurvivorTracker/) | Untested | Tracks player identity and tribe membership per map to a database across a cluster. |
+| [SurvivorTracker](SurvivorTracker/) | Released | Tracks player identity and tribe membership per map to a database across a cluster. |
 | [TribeWarden](TribeWarden/) | Untested | Forces all players to always be in a tribe and automatically creates a solo tribe for any tribeless player. |
 | [SurvivorStats](SurvivorStats/) | Untested | Tracks per-character stats including level, kills, and deaths to a database. |
 | [ResourceStats](ResourceStats/) | Untested | Tracks per-character harvested resource totals to a database. |
