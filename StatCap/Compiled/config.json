@@ -1,0 +1,30 @@
+{
+    "PlayerCaps": {
+        "Health": 40,
+        "Weight": 50,
+        "MeleeDamageMultiplier": 40,
+        "SpeedMultiplier": 0
+    },
+    "DinoCaps": {
+        "Health": 50,
+        "Stamina": 50,
+        "Weight": 50,
+        "MeleeDamageMultiplier": 50
+    },
+    "TotalTamedPointsCap": 250,
+    "DinoOverrides": {
+        "Rex_Character_BP_C": {
+            "Health": 60,
+            "MeleeDamageMultiplier": 60,
+            "TotalTamedPoints": 300
+        },
+        "Ptero_Character_BP_C": {
+            "SpeedMultiplier": -1
+        }
+    },
+    "DestroyOverCapDino": true,
+    "CheckOnBeginPlay": true,
+    "DeniedMessage": "You cannot put more than {cap} point{s} into {stat}.",
+    "TotalDeniedMessage": "This dino cannot hold more than {cap} point{s} across all stats.",
+    "MessageColor": "1.0,0.2,0.2,1.0"
+}

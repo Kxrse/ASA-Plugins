@@ -1,0 +1,23 @@
+{
+    "MapNames": {
+        "TheIsland_WP": "The Island",
+        "ScorchedEarth_WP": "Scorched Earth",
+        "TheCenter_WP": "The Center",
+        "Aberration_WP": "Aberration",
+        "Extinction_WP": "Extinction",
+        "Ragnarok_WP": "Ragnarok",
+        "Astraeos_WP": "Astraeos",
+        "Genesis_WP": "Genesis 1"
+    },
+    "Discord": {
+        "Webhook": "https://discord.com/api/webhooks/ID/TOKEN",
+        "BotToken": "BOT_TOKEN",
+        "ChannelID": "CHANNEL_ID",
+        "PollSeconds": 5,
+        "SenderFormat": "{survivor} [{tribe}]",
+        "BlockedPrefixes": [
+            "http",
+            "https"
+        ]
+    }
+}
