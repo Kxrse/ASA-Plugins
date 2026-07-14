@@ -1,4 +1,4 @@
-﻿/*
+/*
 SurvivorTracker - ASA Plugin
 
 Author: Kxrse
@@ -12,26 +12,41 @@ Commercial use or resale is not permitted without explicit permission.
 
 /**
  * SurvivorTracker - ASA Plugin
- * Tracks player identity and tribe membership per map across a cluster.
  *
- * Table: survivors
- *   PK (eos_id, map_name) — one row per player per map.
+ * Tracks survivor identity and tribe membership per map across a cluster.
+ *
+ * Table: survivortracker_survivors
+ *   PK (eos_id, map_name)  one current-identity row per player per map.
  *   Columns: eos_id, survivor_name, survivor_id, tribe_name, tribe_id, map_name
  *
  * Hooks:
- *   PostLogin              — rebuild cache on reconnect
- *   HandleRespawned        — refresh name + tribe on spawn/respawn
- *   StartNewShooterPlayer  — resolve survivor_id; detect creation vs respawn
- *   NotifyPlayerJoinedTribe — update tribe fields
- *   NotifyPlayerLeftTribe  — null tribe fields
- *   NetUpdateTribeName     — update tribe name on rename
- *   Logout                 — final upsert, clear cache entry
+ *   AShooterGameMode.PostLogin                                    seed cache on connect if character present
+ *   AShooterPlayerController.HandleRespawned_Implementation       refresh name and tribe on spawn or respawn
+ *   AShooterGameMode.StartNewShooterPlayer                        resolve survivor_id, capture creation name, detect recreation
+ *   APrimalCharacter.NetUpdateTribeName                           update tribe name on tribe rename
+ *   AShooterPlayerState.NotifyPlayerJoinedTribe                   set tribe fields on join
+ *   AShooterPlayerState.NotifyPlayerLeftTribe                     clear tribe fields on leave
+ *   AShooterCharacter.RenamePlayer                                capture survivor name on admin rename
+ *   AShooterGameMode.Logout                                       mark record for final flush on disconnect
  *
- * Timer:
- *   NamePollTimer (10s)    — polls GetPlayerName for all cached players to detect mid-session renames
+ * Config:
+ *   ArkApi/Plugins/SurvivorTracker/config.json
+ *   DbHost, DbPort, DbUser, DbPassword, DbName
+ *
+ * Write strategy:
+ *   Detours mutate an in-memory cache only, never the database. A background writer
+ *   flushes every 10 seconds: it pings the connection, reconnects if the link dropped,
+ *   then upserts every cached record. survivor_id is preserved against a zero write so a
+ *   pre-resolution refresh cannot wipe a good id. Records for logged-out players are kept
+ *   until their final state is written, then erased. Config rescanned every 10 seconds
+ *   (size and last-write-time). No database work runs on the game thread.
  */
 
 #include <API/ARK/Ark.h>
+
+#pragma warning(disable: 4191)
+#pragma comment(lib, "AsaApi.lib")
+
 #include <json.hpp>
 #include <Windows.h>
 #include <fstream>
@@ -39,28 +54,30 @@ Commercial use or resale is not permitted without explicit permission.
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <unordered_map>
 #include <vector>
 #include <cstdio>
-#include <cstring>
 
 // =============================================================================
-// MariaDB — Dynamic Load
+// MariaDB - Dynamic Load
 // =============================================================================
 
 typedef struct st_mysql     MYSQL;
 typedef struct st_mysql_res MYSQL_RES;
 typedef char** MYSQL_ROW;
 
-typedef MYSQL* (__stdcall* mysql_init_t)             (MYSQL*);
-typedef MYSQL* (__stdcall* mysql_real_connect_t)     (MYSQL*, const char*, const char*, const char*, const char*, unsigned int, const char*, unsigned long);
-typedef void(__stdcall* mysql_close_t)            (MYSQL*);
-typedef int(__stdcall* mysql_query_t)            (MYSQL*, const char*);
-typedef MYSQL_RES* (__stdcall* mysql_store_result_t)     (MYSQL*);
-typedef void(__stdcall* mysql_free_result_t)      (MYSQL_RES*);
-typedef const char* (__stdcall* mysql_error_t)            (MYSQL*);
-typedef unsigned long(__stdcall* mysql_real_escape_string_t)(MYSQL*, char*, const char*, unsigned long);
-typedef int(__stdcall* mysql_options_t)          (MYSQL*, int, const void*);
+typedef MYSQL* (__stdcall* mysql_init_t)               (MYSQL*);
+typedef MYSQL* (__stdcall* mysql_real_connect_t)       (MYSQL*, const char*, const char*, const char*, const char*, unsigned int, const char*, unsigned long);
+typedef void(__stdcall* mysql_close_t)              (MYSQL*);
+typedef int(__stdcall* mysql_query_t)              (MYSQL*, const char*);
+typedef MYSQL_RES* (__stdcall* mysql_store_result_t)       (MYSQL*);
+typedef void(__stdcall* mysql_free_result_t)        (MYSQL_RES*);
+typedef const char* (__stdcall* mysql_error_t)              (MYSQL*);
+typedef unsigned long(__stdcall* mysql_real_escape_string_t) (MYSQL*, char*, const char*, unsigned long);
+typedef int(__stdcall* mysql_options_t)            (MYSQL*, int, const void*);
+typedef int(__stdcall* mysql_ping_t)               (MYSQL*);
 
 #define MYSQL_OPT_CONNECT_TIMEOUT 0
 
@@ -74,6 +91,7 @@ static mysql_free_result_t        pmysql_free_result = nullptr;
 static mysql_error_t              pmysql_error = nullptr;
 static mysql_real_escape_string_t pmysql_real_escape_string = nullptr;
 static mysql_options_t            pmysql_options = nullptr;
+static mysql_ping_t               pmysql_ping = nullptr;
 static bool                       g_mysql_loaded = false;
 
 static bool LoadMySQLLib()
@@ -93,10 +111,7 @@ static bool LoadMySQLLib()
     {
         g_mysql_module = LoadLibraryA(candidates[i]);
         if (g_mysql_module)
-        {
-            Log::GetLog()->info("[SurvivorTracker] Loaded DB library: {}", candidates[i]);
             break;
-        }
     }
 
     if (!g_mysql_module)
@@ -114,6 +129,7 @@ static bool LoadMySQLLib()
     pmysql_error = (mysql_error_t)GetProcAddress(g_mysql_module, "mysql_error");
     pmysql_real_escape_string = (mysql_real_escape_string_t)GetProcAddress(g_mysql_module, "mysql_real_escape_string");
     pmysql_options = (mysql_options_t)GetProcAddress(g_mysql_module, "mysql_options");
+    pmysql_ping = (mysql_ping_t)GetProcAddress(g_mysql_module, "mysql_ping");
 
     if (!pmysql_init || !pmysql_real_connect || !pmysql_close ||
         !pmysql_query || !pmysql_error || !pmysql_real_escape_string)
@@ -130,19 +146,21 @@ static bool LoadMySQLLib()
 // Configuration
 // =============================================================================
 
-static std::string  g_db_host = "localhost";
-static unsigned int g_db_port = 3306;
-static std::string  g_db_user;
-static std::string  g_db_pass;
-static std::string  g_db_name;
+static const std::string       g_config_path = "ArkApi/Plugins/SurvivorTracker/config.json";
+static std::string             g_db_host = "127.0.0.1";
+static unsigned int            g_db_port = 3306;
+static std::string             g_db_user;
+static std::string             g_db_pass;
+static std::string             g_db_name;
+static std::uintmax_t                   g_cfg_size = 0;
+static std::filesystem::file_time_type  g_cfg_mtime{};
 
 static bool LoadConfig()
 {
-    const std::string path = "ArkApi/Plugins/SurvivorTracker/config.json";
-    std::ifstream file(path);
+    std::ifstream file(g_config_path);
     if (!file.is_open())
     {
-        Log::GetLog()->error("[SurvivorTracker] Cannot open config: {}", path);
+        Log::GetLog()->error("[SurvivorTracker] Cannot open config: {}", g_config_path);
         return false;
     }
 
@@ -150,7 +168,7 @@ static bool LoadConfig()
     {
         nlohmann::json j;
         file >> j;
-        g_db_host = j.value("DbHost", "localhost");
+        g_db_host = j.value("DbHost", "127.0.0.1");
         g_db_port = j.value("DbPort", 3306);
         g_db_user = j.value("DbUser", "");
         g_db_pass = j.value("DbPassword", "");
@@ -168,8 +186,73 @@ static bool LoadConfig()
         return false;
     }
 
+    try
+    {
+        g_cfg_size = std::filesystem::file_size(g_config_path);
+        g_cfg_mtime = std::filesystem::last_write_time(g_config_path);
+    }
+    catch (...) {}
+
     return true;
 }
+
+static void ReloadConfigIfChanged()
+{
+    std::uintmax_t size = 0;
+    std::filesystem::file_time_type mtime{};
+    try
+    {
+        size = std::filesystem::file_size(g_config_path);
+        mtime = std::filesystem::last_write_time(g_config_path);
+    }
+    catch (...) { return; }
+
+    if (size == 0) return;
+    if (size == g_cfg_size && mtime == g_cfg_mtime) return;
+
+    std::ifstream file(g_config_path);
+    if (!file.is_open()) return;
+
+    try
+    {
+        nlohmann::json j;
+        file >> j;
+        g_db_host = j.value("DbHost", "127.0.0.1");
+        g_db_port = j.value("DbPort", 3306);
+        g_db_user = j.value("DbUser", "");
+        g_db_pass = j.value("DbPassword", "");
+        g_db_name = j.value("DbName", "");
+    }
+    catch (const std::exception& ex)
+    {
+        Log::GetLog()->error("[SurvivorTracker] Config reload parse error: {}", ex.what());
+        return;
+    }
+
+    g_cfg_size = size;
+    g_cfg_mtime = mtime;
+
+    Log::GetLog()->info("[SurvivorTracker] Config reloaded");
+}
+
+// =============================================================================
+// Player Cache
+// =============================================================================
+
+struct SurvivorRecord
+{
+    std::string eosId;
+    std::string survivorName;
+    uint64_t    survivorId = 0;
+    std::string tribeName;
+    int         tribeId = 0;
+    bool        inTribe = false;
+    std::string mapName;
+    bool        pendingRemoval = false;
+};
+
+static std::unordered_map<std::string, SurvivorRecord> g_cache;
+static std::mutex                                       g_cache_mutex;
 
 // =============================================================================
 // Database
@@ -177,6 +260,7 @@ static bool LoadConfig()
 
 static MYSQL* g_mysql = nullptr;
 static std::mutex g_db_mutex;
+static bool g_db_logged_down = false;
 
 static std::string EscapeUnsafe(const std::string& in)
 {
@@ -201,44 +285,92 @@ static bool ExecQuery(const std::string& sql)
     return true;
 }
 
-static bool InitDatabase()
+static bool EstablishConnection()
 {
-    if (!LoadMySQLLib()) return false;
-
     g_mysql = pmysql_init(nullptr);
     if (!g_mysql)
     {
-        Log::GetLog()->error("[SurvivorTracker] mysql_init returned null");
+        Log::GetLog()->error("[SurvivorTracker] mysql_init failed");
         return false;
     }
 
-    unsigned int timeout = 10;
-    pmysql_options(g_mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+    if (pmysql_options)
+    {
+        unsigned int timeout = 10;
+        pmysql_options(g_mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+    }
 
     if (!pmysql_real_connect(g_mysql,
         g_db_host.c_str(), g_db_user.c_str(), g_db_pass.c_str(),
         g_db_name.c_str(), g_db_port, nullptr, 0))
     {
-        Log::GetLog()->error("[SurvivorTracker] DB connect failed: {}", pmysql_error(g_mysql));
+        if (!g_db_logged_down)
+            Log::GetLog()->error("[SurvivorTracker] DB connect failed: {}", pmysql_error(g_mysql));
         pmysql_close(g_mysql);
         g_mysql = nullptr;
         return false;
     }
 
+    return true;
+}
+
+static bool EnsureConnected()
+{
+    if (g_mysql)
+    {
+        if (!pmysql_ping) return true;
+        if (pmysql_ping(g_mysql) == 0)
+        {
+            if (g_db_logged_down)
+            {
+                Log::GetLog()->info("[SurvivorTracker] DB connection healthy");
+                g_db_logged_down = false;
+            }
+            return true;
+        }
+        pmysql_close(g_mysql);
+        g_mysql = nullptr;
+    }
+
+    if (EstablishConnection())
+    {
+        if (g_db_logged_down)
+        {
+            Log::GetLog()->info("[SurvivorTracker] DB reconnected");
+            g_db_logged_down = false;
+        }
+        return true;
+    }
+
+    if (!g_db_logged_down)
+    {
+        Log::GetLog()->error("[SurvivorTracker] DB connection lost, retaining cache until reconnect");
+        g_db_logged_down = true;
+    }
+    return false;
+}
+
+static bool InitDatabase()
+{
+    if (!LoadMySQLLib()) return false;
+    if (!EstablishConnection()) return false;
+
     const std::string create_sql =
-        "CREATE TABLE IF NOT EXISTS survivors ("
-        "  eos_id        VARCHAR(128)     NOT NULL,"
-        "  survivor_name VARCHAR(128)     NOT NULL,"
+        "CREATE TABLE IF NOT EXISTS survivortracker_survivors ("
+        "  eos_id        VARCHAR(64)      NOT NULL,"
+        "  survivor_name VARCHAR(128)     NOT NULL DEFAULT '',"
         "  survivor_id   BIGINT UNSIGNED  NOT NULL DEFAULT 0,"
-        "  tribe_name    VARCHAR(128)     NULL,"
-        "  tribe_id      INT              NULL,"
-        "  map_name      VARCHAR(128)     NOT NULL,"
-        "  PRIMARY KEY  (eos_id, map_name)"
-        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+        "  tribe_name    VARCHAR(128)     NOT NULL DEFAULT '',"
+        "  tribe_id      INT              NOT NULL DEFAULT 0,"
+        "  map_name      VARCHAR(64)      NOT NULL,"
+        "  PRIMARY KEY (eos_id, map_name)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
 
     if (!ExecQuery(create_sql))
     {
         Log::GetLog()->error("[SurvivorTracker] Failed to create survivors table");
+        pmysql_close(g_mysql);
+        g_mysql = nullptr;
         return false;
     }
 
@@ -255,86 +387,33 @@ static void CloseDatabase()
     }
 }
 
-static void UpsertSurvivor(const std::string& eosId,
-    const std::string& survivorName,
-    uint64_t           survivorId,
-    const std::string* tribeName,
-    const int* tribeId,
-    const std::string& mapName)
+static void UpsertSurvivor(const SurvivorRecord& rec)
 {
-    std::lock_guard<std::mutex> lock(g_db_mutex);
     if (!g_mysql) return;
 
-    const std::string e_eos = EscapeUnsafe(eosId);
-    const std::string e_name = EscapeUnsafe(survivorName);
-    const std::string e_map = EscapeUnsafe(mapName);
-
-    std::string tribeNameVal = tribeName ? ("'" + EscapeUnsafe(*tribeName) + "'") : "NULL";
-    std::string tribeIdVal = tribeId ? std::to_string(*tribeId) : "NULL";
+    const std::string e_eos = EscapeUnsafe(rec.eosId);
+    const std::string e_name = EscapeUnsafe(rec.survivorName);
+    const std::string e_tribe = EscapeUnsafe(rec.tribeName);
+    const std::string e_map = EscapeUnsafe(rec.mapName);
 
     char sql[1024]{};
     std::snprintf(sql, sizeof(sql),
-        "INSERT INTO survivors "
-        "  (eos_id, survivor_name, survivor_id, tribe_name, tribe_id, map_name) "
-        "VALUES ('%s', '%s', %llu, %s, %s, '%s') "
+        "INSERT INTO survivortracker_survivors "
+        "(eos_id, survivor_name, survivor_id, tribe_name, tribe_id, map_name) "
+        "VALUES ('%s', '%s', %llu, '%s', %d, '%s') "
         "ON DUPLICATE KEY UPDATE "
         "  survivor_name = VALUES(survivor_name),"
         "  survivor_id   = IF(VALUES(survivor_id) = 0, survivor_id, VALUES(survivor_id)),"
         "  tribe_name    = VALUES(tribe_name),"
-        "  tribe_id      = VALUES(tribe_id);",
-        e_eos.c_str(), e_name.c_str(),
-        (unsigned long long)survivorId,
-        tribeNameVal.c_str(), tribeIdVal.c_str(),
-        e_map.c_str()
-    );
+        "  tribe_id      = VALUES(tribe_id)",
+        e_eos.c_str(),
+        e_name.c_str(),
+        (unsigned long long)rec.survivorId,
+        e_tribe.c_str(),
+        rec.tribeId,
+        e_map.c_str());
 
     ExecQuery(sql);
-}
-
-// =============================================================================
-// Player Cache
-// =============================================================================
-
-struct SurvivorRecord
-{
-    std::string eosId;
-    std::string survivorName;
-    uint64_t    survivorId = 0;
-    std::string tribeName;
-    int         tribeId = 0;
-    bool        inTribe = false;
-    std::string mapName;
-};
-
-static std::unordered_map<std::string, SurvivorRecord> g_cache;
-static std::mutex                                       g_cache_mutex;
-
-// =============================================================================
-// Flush Thread
-// =============================================================================
-
-static std::thread       g_flush_thread;
-static std::atomic<bool> g_flush_running{ false };
-
-static void FlushThreadFunc()
-{
-    while (g_flush_running.load())
-    {
-        for (int i = 0; i < 60 && g_flush_running.load(); ++i)
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        if (!g_flush_running.load()) break;
-
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        for (const auto& kv : g_cache)
-        {
-            const SurvivorRecord& rec = kv.second;
-            const std::string* tnPtr = rec.inTribe ? &rec.tribeName : nullptr;
-            const int* tidPtr = rec.inTribe ? &rec.tribeId : nullptr;
-            UpsertSurvivor(rec.eosId, rec.survivorName, rec.survivorId,
-                tnPtr, tidPtr, rec.mapName);
-        }
-    }
 }
 
 // =============================================================================
@@ -343,8 +422,9 @@ static void FlushThreadFunc()
 
 static std::string FStr(const FString& f)
 {
-    const char* s = TCHAR_TO_UTF8(*f);
-    return (s && s[0]) ? s : "unknown";
+    if (f.IsEmpty()) return "unknown";
+    std::string out(TCHAR_TO_UTF8(*f));
+    return out.empty() ? "unknown" : out;
 }
 
 static std::string GetMapName()
@@ -356,70 +436,41 @@ static std::string GetMapName()
     return FStr(map);
 }
 
-static void UpsertFromRecord(const SurvivorRecord& rec)
+static std::string GetEosFromState(AShooterPlayerState* ps)
 {
-    const std::string* tnPtr = rec.inTribe ? &rec.tribeName : nullptr;
-    const int* tidPtr = rec.inTribe ? &rec.tribeId : nullptr;
-    UpsertSurvivor(rec.eosId, rec.survivorName, rec.survivorId,
-        tnPtr, tidPtr, rec.mapName);
+    if (!ps) return "";
+    FString eosRaw;
+    ps->GetUniqueNetIdAsString(&eosRaw);
+    const std::string eosId = FStr(eosRaw);
+    return (eosId == "unknown") ? "" : eosId;
 }
 
-// =============================================================================
-// Name Poll Timer
-// =============================================================================
-
-static int g_name_poll_counter = 0;
-
-static void NamePollTimerCallback()
+static bool BuildRecord(AShooterPlayerController* spc, SurvivorRecord& out)
 {
-    ++g_name_poll_counter;
-    if (g_name_poll_counter < 10) return;
-    g_name_poll_counter = 0;
+    if (!spc) return false;
 
-    UWorld* world = AsaApi::GetApiUtils().GetWorld();
-    if (!world) return;
+    AShooterPlayerState* ps =
+        static_cast<AShooterPlayerState*>(spc->PlayerStateField().Get());
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return false;
 
-    std::vector<std::pair<std::string, std::string>> current;
+    AShooterCharacter* ch = spc->BaseGetPlayerCharacter();
+    if (!ch) return false;
 
-    auto& controllers = world->PlayerControllerListField();
-    for (int i = 0; i < controllers.Num(); ++i)
+    out.eosId = eosId;
+    out.survivorId = ch->GetLinkedPlayerDataID();
+    out.survivorName = FStr(ch->PlayerNameField());
+    out.mapName = GetMapName();
+    out.tribeId = ps->GetTribeId();
+
+    const std::string tn = FStr(ch->TribeNameField());
+    if (!tn.empty() && tn != "unknown")
     {
-        AShooterPlayerController* pc = static_cast<AShooterPlayerController*>(controllers[i].Get());
-        if (!pc) continue;
-
-        AShooterPlayerState* ps = static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
-        if (!ps) continue;
-
-        FString eosRaw;
-        ps->GetUniqueNetIdAsString(&eosRaw);
-        std::string eosId = FStr(eosRaw);
-        if (eosId.empty() || eosId == "unknown") continue;
-
-        FString nameRaw;
-        ps->GetPlayerName(&nameRaw);
-        std::string name = FStr(nameRaw);
-        if (name.empty() || name == "unknown") continue;
-
-        current.emplace_back(std::move(eosId), std::move(name));
+        out.tribeName = tn;
+        out.inTribe = true;
     }
 
-    std::lock_guard<std::mutex> lock(g_cache_mutex);
-    for (const auto& [eosId, currentName] : current)
-    {
-        auto it = g_cache.find(eosId);
-        if (it == g_cache.end()) continue;
-        if (it->second.survivorName == currentName) continue;
-
-        const std::string oldName = it->second.survivorName;
-        it->second.survivorName = currentName;
-
-        Log::GetLog()->info(
-            "[SurvivorTracker] NAME_CHANGED eos_id={} old_name={} new_name={} map={}",
-            eosId, oldName, currentName, it->second.mapName
-        );
-
-        UpsertFromRecord(it->second);
-    }
+    return true;
 }
 
 // =============================================================================
@@ -428,10 +479,12 @@ static void NamePollTimerCallback()
 
 using PostLogin_t = void(*)(AShooterGameMode*, APlayerController*);
 using HandleRespawned_t = void(*)(AShooterPlayerController*, APawn*, bool);
-using StartNewShooterPlayer_t = void(*)(AShooterGameMode*, APlayerController*, bool, bool, FPrimalPlayerCharacterConfigStruct&, UPrimalPlayerData*, bool);
-using NetUpdateTribeName_t = void(*)(APrimalCharacter*, FString&);
-using NotifyJoined_t = void(*)(AShooterPlayerState*, FString&, FString&, bool);
-using NotifyLeft_t = void(*)(AShooterPlayerState*, FString&, FString&, bool);
+using StartNewShooterPlayer_t = void(*)(AShooterGameMode*, APlayerController*, bool, bool,
+    FPrimalPlayerCharacterConfigStruct&, UPrimalPlayerData*, bool);
+using NetUpdateTribeName_t = void(*)(APrimalCharacter*, const FString*);
+using NotifyJoined_t = void(*)(AShooterPlayerState*, const FString&, const FString&, bool);
+using NotifyLeft_t = void(*)(AShooterPlayerState*, const FString&, const FString&, bool);
+using RenamePlayer_t = void(*)(AShooterCharacter*, const FString*);
 using Logout_t = void(*)(AShooterGameMode*, AController*);
 
 static PostLogin_t             Original_PostLogin = nullptr;
@@ -440,6 +493,7 @@ static StartNewShooterPlayer_t Original_StartNewShooterPlayer = nullptr;
 static NetUpdateTribeName_t    Original_NetUpdateTribeName = nullptr;
 static NotifyJoined_t          Original_NotifyJoined = nullptr;
 static NotifyLeft_t            Original_NotifyLeft = nullptr;
+static RenamePlayer_t          Original_RenamePlayer = nullptr;
 static Logout_t                Original_Logout = nullptr;
 
 // =============================================================================
@@ -450,44 +504,26 @@ void Detour_PostLogin(AShooterGameMode* gm, APlayerController* pc)
 {
     Original_PostLogin(gm, pc);
 
-    if (!pc) return;
+    if (!pc || !pc->IsA(AShooterPlayerController::StaticClass())) return;
+    AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(pc);
 
     AShooterPlayerState* ps =
-        static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
-    if (!ps) return;
-
-    FString eosRaw;
-    ps->GetUniqueNetIdAsString(&eosRaw);
-    const std::string eosId = FStr(eosRaw);
-    if (eosId.empty() || eosId == "unknown") return;
+        static_cast<AShooterPlayerState*>(spc->PlayerStateField().Get());
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
 
     {
         std::lock_guard<std::mutex> lock(g_cache_mutex);
-        if (g_cache.count(eosId)) return;
+        auto it = g_cache.find(eosId);
+        if (it != g_cache.end())
+        {
+            it->second.pendingRemoval = false;
+            return;
+        }
     }
-
-    APawn* pawn = pc->PawnField().Get();
-    if (!pawn) return;
-
-    AShooterCharacter* ch = static_cast<AShooterCharacter*>(pawn);
-    if (!ch) return;
 
     SurvivorRecord rec;
-    rec.eosId = eosId;
-    rec.survivorId = ch->GetLinkedPlayerDataID();
-    rec.mapName = GetMapName();
-
-    FString nameRaw;
-    ps->GetPlayerName(&nameRaw);
-    rec.survivorName = FStr(nameRaw);
-
-    rec.tribeId = ps->GetTribeId();
-    std::string tn = FStr(ch->TribeNameField());
-    if (!tn.empty() && tn != "unknown")
-    {
-        rec.tribeName = tn;
-        rec.inTribe = true;
-    }
+    if (!BuildRecord(spc, rec)) return;
 
     {
         std::lock_guard<std::mutex> lock(g_cache_mutex);
@@ -495,19 +531,15 @@ void Detour_PostLogin(AShooterGameMode* gm, APlayerController* pc)
     }
 
     Log::GetLog()->info(
-        "[SurvivorTracker] RECONNECT eos_id={} survivor_name={} "
-        "survivor_id={} map={} tribe_name={} tribe_id={}",
+        "[SurvivorTracker] RECONNECT eos_id={} survivor_name={} survivor_id={} map={} "
+        "tribe_name={} tribe_id={}",
         rec.eosId, rec.survivorName, rec.survivorId, rec.mapName,
         rec.inTribe ? rec.tribeName : "NULL",
         rec.inTribe ? rec.tribeId : 0
     );
-
-    UpsertFromRecord(rec);
 }
 
-void Detour_HandleRespawned(AShooterPlayerController* pc,
-    APawn* pawn,
-    bool                      bNewPlayer)
+void Detour_HandleRespawned(AShooterPlayerController* pc, APawn* pawn, bool bNewPlayer)
 {
     Original_HandleRespawned(pc, pawn, bNewPlayer);
 
@@ -515,58 +547,47 @@ void Detour_HandleRespawned(AShooterPlayerController* pc,
 
     AShooterPlayerState* ps =
         static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
-    if (!ps) return;
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
 
-    FString eosRaw;
-    ps->GetUniqueNetIdAsString(&eosRaw);
-    const std::string eosId = FStr(eosRaw);
-    if (eosId.empty() || eosId == "unknown") return;
+    AShooterCharacter* ch = static_cast<AShooterCharacter*>(pawn);
+    if (!ch) return;
 
-    FString nameRaw;
-    ps->GetPlayerName(&nameRaw);
-    const std::string survivorName = FStr(nameRaw);
-
+    const std::string survivorName = FStr(ch->PlayerNameField());
     const std::string mapName = GetMapName();
     const int         tribeId = ps->GetTribeId();
 
     std::string tribeName;
     bool        inTribe = false;
-
-    if (AShooterCharacter* ch = static_cast<AShooterCharacter*>(pawn))
+    const std::string tn = FStr(ch->TribeNameField());
+    if (!tn.empty() && tn != "unknown")
     {
-        std::string tn = FStr(ch->TribeNameField());
-        if (!tn.empty() && tn != "unknown")
-        {
-            tribeName = tn;
-            inTribe = true;
-        }
+        tribeName = tn;
+        inTribe = true;
     }
 
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    auto it = g_cache.find(eosId);
+    if (it != g_cache.end())
     {
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        auto it = g_cache.find(eosId);
-        if (it != g_cache.end())
-        {
-            it->second.survivorName = survivorName;
-            it->second.tribeName = tribeName;
-            it->second.tribeId = tribeId;
-            it->second.inTribe = inTribe;
-            it->second.mapName = mapName;
-            UpsertFromRecord(it->second);
-        }
-        else
-        {
-            SurvivorRecord rec;
-            rec.eosId = eosId;
-            rec.survivorName = survivorName;
-            rec.survivorId = 0;
-            rec.tribeName = tribeName;
-            rec.tribeId = tribeId;
-            rec.inTribe = inTribe;
-            rec.mapName = mapName;
-            g_cache[eosId] = rec;
-            UpsertFromRecord(rec);
-        }
+        it->second.survivorName = survivorName;
+        it->second.tribeName = tribeName;
+        it->second.tribeId = tribeId;
+        it->second.inTribe = inTribe;
+        it->second.mapName = mapName;
+        it->second.pendingRemoval = false;
+    }
+    else
+    {
+        SurvivorRecord rec;
+        rec.eosId = eosId;
+        rec.survivorName = survivorName;
+        rec.survivorId = 0;
+        rec.tribeName = tribeName;
+        rec.tribeId = tribeId;
+        rec.inTribe = inTribe;
+        rec.mapName = mapName;
+        g_cache[eosId] = rec;
     }
 }
 
@@ -580,221 +601,233 @@ void Detour_StartNewShooterPlayer(AShooterGameMode* gm,
 {
     Original_StartNewShooterPlayer(gm, pc, b1, b2, cfg, playerData, b3);
 
-    if (!pc) return;
+    if (!pc || !pc->IsA(AShooterPlayerController::StaticClass())) return;
+    AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(pc);
 
     AShooterPlayerState* ps =
-        static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
-    if (!ps) return;
+        static_cast<AShooterPlayerState*>(spc->PlayerStateField().Get());
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
 
-    FString eosRaw;
-    ps->GetUniqueNetIdAsString(&eosRaw);
-    const std::string eosId = FStr(eosRaw);
-    if (eosId.empty() || eosId == "unknown") return;
-
-    APawn* pawn = pc->PawnField().Get();
-    if (!pawn) return;
-
-    AShooterCharacter* ch = static_cast<AShooterCharacter*>(pawn);
+    AShooterCharacter* ch = spc->BaseGetPlayerCharacter();
     if (!ch) return;
 
     const uint64_t newSurvivorId = ch->GetLinkedPlayerDataID();
     if (newSurvivorId == 0) return;
 
+    const std::string survivorName = FStr(ch->PlayerNameField());
     const std::string mapName = GetMapName();
 
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    auto it = g_cache.find(eosId);
+    if (it == g_cache.end()) return;
+
+    SurvivorRecord& rec = it->second;
+    if (rec.survivorId == newSurvivorId)
     {
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        auto it = g_cache.find(eosId);
-        if (it == g_cache.end()) return;
+        rec.survivorName = survivorName;
+        return;
+    }
 
-        SurvivorRecord& rec = it->second;
+    const bool isRecreation = (rec.survivorId != 0) && (rec.mapName == mapName);
 
-        if (rec.survivorId == newSurvivorId) return;
+    if (isRecreation)
+    {
+        Log::GetLog()->info(
+            "[SurvivorTracker] CHARACTER_RECREATED eos_id={} survivor_name={} "
+            "old_survivor_id={} new_survivor_id={} map={}",
+            rec.eosId, survivorName, rec.survivorId, newSurvivorId, mapName
+        );
 
-        const bool isRecreation = (rec.survivorId != 0) &&
-            (rec.mapName == mapName);
+        rec.survivorId = newSurvivorId;
+        rec.survivorName = survivorName;
+        rec.tribeName = "";
+        rec.tribeId = 0;
+        rec.inTribe = false;
+    }
+    else
+    {
+        rec.survivorId = newSurvivorId;
+        rec.survivorName = survivorName;
 
-        if (isRecreation)
-        {
-            Log::GetLog()->info(
-                "[SurvivorTracker] CHARACTER_RECREATED eos_id={} survivor_name={} "
-                "old_survivor_id={} new_survivor_id={} map={}",
-                rec.eosId, rec.survivorName, rec.survivorId, newSurvivorId, mapName
-            );
-
-            rec.survivorId = newSurvivorId;
-            rec.tribeName = "";
-            rec.tribeId = 0;
-            rec.inTribe = false;
-        }
-        else
-        {
-            rec.survivorId = newSurvivorId;
-
-            Log::GetLog()->info(
-                "[SurvivorTracker] CHARACTER_CREATED eos_id={} survivor_name={} "
-                "survivor_id={} map={}",
-                rec.eosId, rec.survivorName, rec.survivorId, mapName
-            );
-        }
-
-        UpsertFromRecord(rec);
+        Log::GetLog()->info(
+            "[SurvivorTracker] CHARACTER_CREATED eos_id={} survivor_name={} survivor_id={} map={}",
+            rec.eosId, rec.survivorName, rec.survivorId, mapName
+        );
     }
 }
 
-void Detour_NetUpdateTribeName(APrimalCharacter* character, FString& newNameFStr)
+void Detour_NetUpdateTribeName(APrimalCharacter* character, const FString* newTribeName)
 {
-    Original_NetUpdateTribeName(character, newNameFStr);
+    Original_NetUpdateTribeName(character, newTribeName);
 
     if (!character) return;
 
-    AController* controller = character->GetOwnerController();
-    if (!controller) return;
+    APlayerController* controller = character->GetOwnerController();
+    if (!controller || !controller->IsA(AShooterPlayerController::StaticClass())) return;
 
-    AShooterPlayerController* pc = static_cast<AShooterPlayerController*>(controller);
-    if (!pc) return;
-
+    AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(controller);
     AShooterPlayerState* ps =
-        static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
-    if (!ps) return;
+        static_cast<AShooterPlayerState*>(spc->PlayerStateField().Get());
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
 
-    FString eosRaw;
-    ps->GetUniqueNetIdAsString(&eosRaw);
-    const std::string eosId = FStr(eosRaw);
-    if (eosId.empty() || eosId == "unknown") return;
-
-    const std::string newName = FStr(newNameFStr);
+    const std::string newName = newTribeName ? FStr(*newTribeName) : "";
     if (newName.empty() || newName == "unknown") return;
 
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    auto it = g_cache.find(eosId);
+    if (it == g_cache.end()) return;
+
+    SurvivorRecord& rec = it->second;
+    if (rec.inTribe && rec.tribeName == newName) return;
+
+    const std::string oldName = rec.tribeName;
+    rec.tribeName = newName;
+    rec.inTribe = true;
+
+    if (!oldName.empty())
     {
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        auto it = g_cache.find(eosId);
-        if (it == g_cache.end()) return;
-
-        SurvivorRecord& rec = it->second;
-        if (rec.inTribe && rec.tribeName == newName) return;
-
-        const std::string oldName = rec.tribeName;
-        rec.tribeName = newName;
-        rec.inTribe = true;
-
-        if (!oldName.empty())
-        {
-            Log::GetLog()->info(
-                "[SurvivorTracker] TRIBE_RENAMED eos_id={} survivor_name={} "
-                "old_tribe_name={} new_tribe_name={} tribe_id={} map={}",
-                rec.eosId, rec.survivorName, oldName, rec.tribeName, rec.tribeId, rec.mapName
-            );
-        }
-
-        UpsertFromRecord(rec);
+        Log::GetLog()->info(
+            "[SurvivorTracker] TRIBE_RENAMED eos_id={} survivor_name={} "
+            "old_tribe_name={} new_tribe_name={} tribe_id={} map={}",
+            rec.eosId, rec.survivorName, oldName, rec.tribeName, rec.tribeId, rec.mapName
+        );
     }
 }
 
 void Detour_NotifyJoinedTribe(AShooterPlayerState* ps,
-    FString& playerName,
-    FString& tribeName,
-    bool                 joinee)
+    const FString& playerName,
+    const FString& tribeName,
+    bool           joinee)
 {
     Original_NotifyJoined(ps, playerName, tribeName, joinee);
 
-    if (!ps) return;
-
-    FString eosRaw;
-    ps->GetUniqueNetIdAsString(&eosRaw);
-    const std::string eosId = FStr(eosRaw);
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
 
     const std::string newTribeName = FStr(tribeName);
     const int         newTribeId = ps->GetTribeId();
 
-    {
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        auto it = g_cache.find(eosId);
-        if (it != g_cache.end())
-        {
-            it->second.tribeName = newTribeName;
-            it->second.tribeId = newTribeId;
-            it->second.inTribe = true;
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    auto it = g_cache.find(eosId);
+    if (it == g_cache.end()) return;
 
-            const SurvivorRecord& rec = it->second;
+    it->second.tribeName = newTribeName;
+    it->second.tribeId = newTribeId;
+    it->second.inTribe = true;
 
-            Log::GetLog()->info(
-                "[SurvivorTracker] TRIBE_JOIN eos_id={} survivor_name={} "
-                "survivor_id={} tribe_name={} tribe_id={} map={}",
-                rec.eosId, rec.survivorName, rec.survivorId,
-                rec.tribeName, rec.tribeId, rec.mapName
-            );
-
-            UpsertFromRecord(rec);
-        }
-    }
+    const SurvivorRecord& rec = it->second;
+    Log::GetLog()->info(
+        "[SurvivorTracker] TRIBE_JOIN eos_id={} survivor_name={} survivor_id={} "
+        "tribe_name={} tribe_id={} map={}",
+        rec.eosId, rec.survivorName, rec.survivorId,
+        rec.tribeName, rec.tribeId, rec.mapName
+    );
 }
 
 void Detour_NotifyLeftTribe(AShooterPlayerState* ps,
-    FString& playerName,
-    FString& tribeName,
-    bool                 joinee)
+    const FString& playerName,
+    const FString& tribeName,
+    bool           joinee)
 {
     Original_NotifyLeft(ps, playerName, tribeName, joinee);
 
-    if (!ps) return;
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
 
-    FString eosRaw;
-    ps->GetUniqueNetIdAsString(&eosRaw);
-    const std::string eosId = FStr(eosRaw);
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    auto it = g_cache.find(eosId);
+    if (it == g_cache.end()) return;
 
+    it->second.tribeName = "";
+    it->second.tribeId = 0;
+    it->second.inTribe = false;
+
+    const SurvivorRecord& rec = it->second;
+    Log::GetLog()->info(
+        "[SurvivorTracker] TRIBE_LEAVE eos_id={} survivor_name={} survivor_id={} "
+        "tribe_name=NULL tribe_id=NULL map={}",
+        rec.eosId, rec.survivorName, rec.survivorId, rec.mapName
+    );
+}
+
+void Detour_RenamePlayer(AShooterCharacter* character, const FString* newName)
+{
+    Original_RenamePlayer(character, newName);
+
+    if (!character) return;
+
+    std::string newSurvivorName = FStr(character->PlayerNameField());
+    if ((newSurvivorName.empty() || newSurvivorName == "unknown") && newName)
+        newSurvivorName = FStr(*newName);
+    if (newSurvivorName.empty() || newSurvivorName == "unknown") return;
+
+    APlayerController* controller = character->GetOwnerController();
+    if (!controller || !controller->IsA(AShooterPlayerController::StaticClass())) return;
+
+    AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(controller);
+    AShooterPlayerState* ps =
+        static_cast<AShooterPlayerState*>(spc->PlayerStateField().Get());
+    const std::string eosId = GetEosFromState(ps);
+    if (eosId.empty()) return;
+
+    const uint64_t survivorId = character->GetLinkedPlayerDataID();
+
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    auto it = g_cache.find(eosId);
+    if (it != g_cache.end())
     {
-        std::lock_guard<std::mutex> lock(g_cache_mutex);
-        auto it = g_cache.find(eosId);
-        if (it != g_cache.end())
-        {
-            it->second.tribeName = "";
-            it->second.tribeId = 0;
-            it->second.inTribe = false;
+        if (it->second.survivorName == newSurvivorName) return;
 
-            const SurvivorRecord& rec = it->second;
+        const std::string oldName = it->second.survivorName;
+        it->second.survivorName = newSurvivorName;
+        if (it->second.survivorId == 0 && survivorId != 0)
+            it->second.survivorId = survivorId;
 
-            Log::GetLog()->info(
-                "[SurvivorTracker] TRIBE_LEAVE eos_id={} survivor_name={} "
-                "survivor_id={} tribe_name=NULL tribe_id=NULL map={}",
-                rec.eosId, rec.survivorName, rec.survivorId, rec.mapName
-            );
+        Log::GetLog()->info(
+            "[SurvivorTracker] NAME_CHANGED eos_id={} old_name={} new_name={} map={}",
+            eosId, oldName, newSurvivorName, it->second.mapName
+        );
+    }
+    else
+    {
+        SurvivorRecord rec;
+        if (!BuildRecord(spc, rec)) return;
+        rec.survivorName = newSurvivorName;
+        g_cache[eosId] = rec;
 
-            UpsertFromRecord(rec);
-        }
+        Log::GetLog()->info(
+            "[SurvivorTracker] NAME_CHANGED eos_id={} old_name={} new_name={} map={}",
+            eosId, "NULL", newSurvivorName, rec.mapName
+        );
     }
 }
 
 void Detour_Logout(AShooterGameMode* gm, AController* controller)
 {
-    if (AShooterPlayerController* pc =
-        static_cast<AShooterPlayerController*>(controller))
+    if (controller && controller->IsA(AShooterPlayerController::StaticClass()))
     {
+        AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(controller);
         AShooterPlayerState* ps =
-            static_cast<AShooterPlayerState*>(pc->PlayerStateField().Get());
-
-        if (ps)
+            static_cast<AShooterPlayerState*>(spc->PlayerStateField().Get());
+        const std::string eosId = GetEosFromState(ps);
+        if (!eosId.empty())
         {
-            FString eosRaw;
-            ps->GetUniqueNetIdAsString(&eosRaw);
-            const std::string eosId = FStr(eosRaw);
-
             std::lock_guard<std::mutex> lock(g_cache_mutex);
             auto it = g_cache.find(eosId);
             if (it != g_cache.end())
             {
-                const SurvivorRecord& rec = it->second;
+                it->second.pendingRemoval = true;
 
+                const SurvivorRecord& rec = it->second;
                 Log::GetLog()->info(
-                    "[SurvivorTracker] DISCONNECT eos_id={} survivor_name={} "
-                    "survivor_id={} map={} tribe_name={} tribe_id={}",
+                    "[SurvivorTracker] DISCONNECT eos_id={} survivor_name={} survivor_id={} "
+                    "map={} tribe_name={} tribe_id={}",
                     rec.eosId, rec.survivorName, rec.survivorId, rec.mapName,
                     rec.inTribe ? rec.tribeName : "NULL",
                     rec.inTribe ? rec.tribeId : 0
                 );
-
-                UpsertFromRecord(rec);
-                g_cache.erase(it);
             }
         }
     }
@@ -803,10 +836,94 @@ void Detour_Logout(AShooterGameMode* gm, AController* controller)
 }
 
 // =============================================================================
+// Writer Thread
+// =============================================================================
+
+static std::thread       g_worker_thread;
+static std::atomic<bool> g_worker_running{ false };
+
+static void FlushCache()
+{
+    std::vector<SurvivorRecord> toWrite;
+
+    {
+        std::lock_guard<std::mutex> lock(g_cache_mutex);
+        if (g_cache.empty()) return;
+        toWrite.reserve(g_cache.size());
+        for (const auto& kv : g_cache)
+            toWrite.push_back(kv.second);
+    }
+
+    {
+        std::lock_guard<std::mutex> dbLock(g_db_mutex);
+        if (!EnsureConnected()) return;
+        for (const auto& rec : toWrite)
+            UpsertSurvivor(rec);
+    }
+
+    std::lock_guard<std::mutex> lock(g_cache_mutex);
+    for (const auto& rec : toWrite)
+    {
+        if (!rec.pendingRemoval) continue;
+        auto it = g_cache.find(rec.eosId);
+        if (it != g_cache.end() && it->second.pendingRemoval)
+            g_cache.erase(it);
+    }
+}
+
+static void WorkerLoop()
+{
+    int tick = 0;
+    while (g_worker_running.load())
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (!g_worker_running.load()) break;
+
+        ++tick;
+        if (tick % 10 == 0)
+        {
+            FlushCache();
+            ReloadConfigIfChanged();
+        }
+    }
+
+    FlushCache();
+}
+
+// =============================================================================
+// Seeding
+// =============================================================================
+
+static void SeedAllOnlinePlayers()
+{
+    UWorld* world = AsaApi::GetApiUtils().GetWorld();
+    if (!world) return;
+
+    auto& controllers = world->PlayerControllerListField();
+    for (int i = 0; i < controllers.Num(); ++i)
+    {
+        APlayerController* pc = controllers[i].Get();
+        if (!pc || !pc->IsA(AShooterPlayerController::StaticClass())) continue;
+
+        AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(pc);
+
+        SurvivorRecord rec;
+        if (!BuildRecord(spc, rec)) continue;
+
+        std::lock_guard<std::mutex> lock(g_cache_mutex);
+        auto it = g_cache.find(rec.eosId);
+        if (it == g_cache.end())
+            g_cache[rec.eosId] = rec;
+        else
+            it->second.pendingRemoval = false;
+    }
+}
+
+// =============================================================================
 // Plugin Entry Points
 // =============================================================================
 
-extern "C" __declspec(dllexport) void Plugin_Init()
+static void InitImpl()
 {
     Log::Get().Init("SurvivorTracker");
 
@@ -821,9 +938,6 @@ extern "C" __declspec(dllexport) void Plugin_Init()
         Log::GetLog()->error("[SurvivorTracker] Halted - database error");
         return;
     }
-
-    g_flush_running.store(true);
-    g_flush_thread = std::thread(FlushThreadFunc);
 
     AsaApi::GetHooks().SetHook(
         "AShooterGameMode.PostLogin(APlayerController*)",
@@ -844,7 +958,7 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     );
 
     AsaApi::GetHooks().SetHook(
-        "APrimalCharacter.NetUpdateTribeName_Implementation(FString&)",
+        "APrimalCharacter.NetUpdateTribeName(FString&)",
         (LPVOID)&Detour_NetUpdateTribeName,
         (LPVOID*)&Original_NetUpdateTribeName
     );
@@ -862,28 +976,30 @@ extern "C" __declspec(dllexport) void Plugin_Init()
     );
 
     AsaApi::GetHooks().SetHook(
+        "AShooterCharacter.RenamePlayer(FString&)",
+        (LPVOID)&Detour_RenamePlayer,
+        (LPVOID*)&Original_RenamePlayer
+    );
+
+    AsaApi::GetHooks().SetHook(
         "AShooterGameMode.Logout(AController*)",
         (LPVOID)&Detour_Logout,
         (LPVOID*)&Original_Logout
     );
 
-    AsaApi::GetCommands().AddOnTimerCallback(
-        FString(L"SurvivorTracker_NamePoll"),
-        &NamePollTimerCallback
-    );
+    g_worker_running.store(true);
+    g_worker_thread = std::thread(WorkerLoop);
+
+    SeedAllOnlinePlayers();
 
     Log::GetLog()->info("[SurvivorTracker] Plugin loaded");
 }
 
-extern "C" __declspec(dllexport) void Plugin_Unload()
+static void UnloadImpl()
 {
-    g_flush_running.store(false);
-    if (g_flush_thread.joinable())
-        g_flush_thread.join();
-
-    AsaApi::GetCommands().RemoveOnTimerCallback(
-        FString(L"SurvivorTracker_NamePoll")
-    );
+    g_worker_running.store(false);
+    if (g_worker_thread.joinable())
+        g_worker_thread.join();
 
     AsaApi::GetHooks().DisableHook(
         "AShooterGameMode.PostLogin(APlayerController*)",
@@ -901,7 +1017,7 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     );
 
     AsaApi::GetHooks().DisableHook(
-        "APrimalCharacter.NetUpdateTribeName_Implementation(FString&)",
+        "APrimalCharacter.NetUpdateTribeName(FString&)",
         (LPVOID)&Detour_NetUpdateTribeName
     );
 
@@ -913,6 +1029,11 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     AsaApi::GetHooks().DisableHook(
         "AShooterPlayerState.NotifyPlayerLeftTribe(FString&,FString&,bool)",
         (LPVOID)&Detour_NotifyLeftTribe
+    );
+
+    AsaApi::GetHooks().DisableHook(
+        "AShooterCharacter.RenamePlayer(FString&)",
+        (LPVOID)&Detour_RenamePlayer
     );
 
     AsaApi::GetHooks().DisableHook(
@@ -928,4 +1049,30 @@ extern "C" __declspec(dllexport) void Plugin_Unload()
     }
 
     Log::GetLog()->info("[SurvivorTracker] Plugin unloaded");
+}
+
+extern "C" __declspec(dllexport) void Plugin_Init()
+{
+    try { InitImpl(); }
+    catch (const std::exception& ex)
+    {
+        Log::GetLog()->error("[SurvivorTracker] Plugin_Init exception: {}", ex.what());
+    }
+    catch (...)
+    {
+        Log::GetLog()->error("[SurvivorTracker] Plugin_Init unknown exception");
+    }
+}
+
+extern "C" __declspec(dllexport) void Plugin_Unload()
+{
+    try { UnloadImpl(); }
+    catch (const std::exception& ex)
+    {
+        Log::GetLog()->error("[SurvivorTracker] Plugin_Unload exception: {}", ex.what());
+    }
+    catch (...)
+    {
+        Log::GetLog()->error("[SurvivorTracker] Plugin_Unload unknown exception");
+    }
 }
