@@ -1,45 +1,30 @@
 {
-  "PlayerCaps": {
-    "Health": 40,
-    "Stamina": 40,
-    "Oxygen": 40,
-    "Food": 40,
-    "Water": 40,
-    "Weight": 60,
-    "MeleeDamageMultiplier": 40,
-    "SpeedMultiplier": 34,
-    "TemperatureFortitude": 40,
-    "CraftingSpeedMultiplier": 40
-  },
-  "DinoCaps": {
-    "Health": 88,
-    "Stamina": 88,
-    "Oxygen": 88,
-    "Food": 88,
-    "Weight": 88,
-    "MeleeDamageMultiplier": 88,
-    "SpeedMultiplier": 88
-  },
-  "TotalTamedPointsCap": 88,
-  "DinoOverrides": {
-    "Rex_Character_BP_C": {
-      "MeleeDamageMultiplier": 30,
-      "TotalTamedPoints": 60
+    "PlayerCaps": {
+        "Health": 40,
+        "Weight": 50,
+        "MeleeDamageMultiplier": 40,
+        "SpeedMultiplier": 0
     },
-    "Ptero_Character_BP_C": {
-      "SpeedMultiplier": 50,
-      "Weight": -1
+    "DinoCaps": {
+        "Health": 50,
+        "Stamina": 50,
+        "Weight": 50,
+        "MeleeDamageMultiplier": 50
     },
-    "Dodo_Character_BP_C": {
-      "TotalTamedPoints": -1
-    }
-  },
-  "DestroyOverCapDino": true,
-  "CheckOnUncryo": true,
-  "CheckOnBeginPlay": false,
-  "DeniedMessage": "You cannot put more than {cap} point{s} into {stat}.",
-  "TotalDeniedMessage": "This dino cannot hold more than {cap} point{s} across all stats.",
-  "OverCapDestroyMessage": "This dino has more than {cap} point{s} in {stat} and has been destroyed.",
-  "TotalOverCapDestroyMessage": "This dino holds {total} points across all stats, above the limit of {cap}, and has been destroyed.",
-  "MessageColor": "1.0,0.2,0.2,1.0"
+    "TotalTamedPointsCap": 250,
+    "DinoOverrides": {
+        "Rex_Character_BP_C": {
+            "Health": 60,
+            "MeleeDamageMultiplier": 60,
+            "TotalTamedPoints": 300
+        },
+        "Ptero_Character_BP_C": {
+            "SpeedMultiplier": -1
+        }
+    },
+    "DestroyOverCapDino": true,
+    "CheckOnBeginPlay": true,
+    "DeniedMessage": "You cannot put more than {cap} point{s} into {stat}.",
+    "TotalDeniedMessage": "This dino cannot hold more than {cap} point{s} across all stats.",
+    "MessageColor": "1.0,0.2,0.2,1.0"
 }

@@ -14,27 +14,56 @@ Commercial use or resale is not permitted without explicit permission.
  * StatCap - ASA Plugin
  *
  * Hooks:
- *   AShooterPlayerController.ServerRequestLevelUp_Implementation(UPrimalCharacterStatusComponent*,EPrimalCharacterStatusValue::Type)
- *   APrimalDinoCharacter.OnUncryo(AShooterPlayerController*)
- *   APrimalDinoCharacter.BeginPlay()
+ *   AShooterPlayerController.ServerRequestLevelUp_Implementation   cap applied points, deny over cap spends
+ *   APrimalDinoCharacter.BeginPlay                                 delayed check after world entry, destroy if over cap
  *
  * Config:
- *   config.json
- *     PlayerCaps                 - stat name to max applied points on the survivor, omit a stat to leave it uncapped
- *     DinoCaps                   - stat name to max applied tamed points on a dino, omit a stat to leave it uncapped
- *     TotalTamedPointsCap        - max tamed points summed across every stat on a dino, -1 or absent to leave uncapped
- *     DinoOverrides              - dino class name to per stat caps, each stat overrides DinoCaps, -1 uncaps that stat
- *                                  the reserved key TotalTamedPoints overrides TotalTamedPointsCap for that species
- *     DestroyOverCapDino         - master switch for destroying dinos that breach a cap
- *     CheckOnUncryo              - when true, a dino is checked as it leaves a cryopod, the deployer is told why
- *     CheckOnBeginPlay           - when true, a dino is checked one second after entering the world, which covers
- *                                  server start, and no player is told because none is present
- *     DeniedMessage              - chat text sent when a per stat cap blocks a point, supports {stat}, {cap} and {s}
- *     TotalDeniedMessage         - chat text sent when the total cap blocks a point, supports {cap} and {s}
- *     OverCapDestroyMessage      - chat text sent when a per stat cap destroys a dino, supports {stat}, {cap} and {s}
- *     TotalOverCapDestroyMessage - chat text sent when the total cap destroys a dino, supports {cap}, {total} and {s}
- *     MessageColor               - RGBA string used for all messages
- *     Hot-reloaded every 10s.
+ *   ArkApi/Plugins/StatCap/config.json
+ *   PlayerCaps: stat name to max applied points on the survivor, omit a stat to leave it uncapped
+ *   DinoCaps: stat name to max applied tamed points on a dino, omit a stat to leave it uncapped
+ *   TotalTamedPointsCap: max tamed points summed across every stat on a dino, -1 or absent to leave uncapped
+ *   DinoOverrides: dino class name to per stat caps, each stat overrides DinoCaps, -1 uncaps that stat. The
+ *                  reserved key TotalTamedPoints overrides TotalTamedPointsCap for that species
+ *   DestroyOverCapDino: master switch for destroying dinos that breach a cap
+ *   CheckOnBeginPlay: when true, a dino is checked one second after entering the world, which is the sole
+ *                     destroy trigger and covers server start, cryo deploys, transfers and hatches. No player
+ *                     is told because none is reliably present
+ *   DeniedMessage: chat text sent when a per stat cap blocks a point, supports {stat}, {cap} and {s}
+ *   TotalDeniedMessage: chat text sent when the total cap blocks a point, supports {cap} and {s}
+ *   MessageColor: RGBA string used for all messages
+ *   Hot-reloaded every 10s.
+ *
+ * Config Example:
+ * {
+ *     "PlayerCaps": {
+ *         "Health": 40,
+ *         "Weight": 50,
+ *         "MeleeDamageMultiplier": 40,
+ *         "SpeedMultiplier": 0
+ *     },
+ *     "DinoCaps": {
+ *         "Health": 50,
+ *         "Stamina": 50,
+ *         "Weight": 50,
+ *         "MeleeDamageMultiplier": 50
+ *     },
+ *     "TotalTamedPointsCap": 250,
+ *     "DinoOverrides": {
+ *         "Rex_Character_BP_C": {
+ *             "Health": 60,
+ *             "MeleeDamageMultiplier": 60,
+ *             "TotalTamedPoints": 300
+ *         },
+ *         "Ptero_Character_BP_C": {
+ *             "SpeedMultiplier": -1
+ *         }
+ *     },
+ *     "DestroyOverCapDino": true,
+ *     "CheckOnBeginPlay": true,
+ *     "DeniedMessage": "You cannot put more than {cap} point{s} into {stat}.",
+ *     "TotalDeniedMessage": "This dino cannot hold more than {cap} point{s} across all stats.",
+ *     "MessageColor": "1.0,0.2,0.2,1.0"
+ * }
  *
  * The {s} placeholder expands to an empty string when the cap is 1 and to the letter s otherwise.
  * Dino class names are matched exactly, so each variant needs its own DinoOverrides entry.
@@ -48,6 +77,10 @@ Commercial use or resale is not permitted without explicit permission.
  */
 
 #include <API/ARK/Ark.h>
+
+#pragma warning(disable: 4191)
+#pragma comment(lib, "AsaApi.lib")
+
 #include <json.hpp>
 #include <Windows.h>
 #include <fstream>
@@ -59,9 +92,6 @@ Commercial use or resale is not permitted without explicit permission.
 #include <unordered_map>
 #include <filesystem>
 #include <algorithm>
-
-#pragma warning(disable: 4191)
-#pragma comment(lib, "AsaApi")
 
 namespace fs = std::filesystem;
 
@@ -121,7 +151,7 @@ struct CapBreach
 
 struct PendingCheck
 {
-    APrimalDinoCharacter* dino;
+    TWeakObjectPtr<APrimalDinoCharacter> dino;
     std::chrono::steady_clock::time_point checkAt;
 };
 
@@ -132,15 +162,12 @@ static int g_total_cap = CAP_NONE;
 static std::unordered_map<std::string, OverrideEntry> g_dino_overrides;
 static std::wstring g_denied_message = L"You cannot put more than {cap} point{s} into {stat}.";
 static std::wstring g_total_denied_message = L"This dino cannot hold more than {cap} point{s} across all stats.";
-static std::wstring g_over_cap_message = L"This dino has more than {cap} point{s} in {stat} and has been destroyed.";
-static std::wstring g_total_over_cap_message = L"This dino holds {total} points across all stats, above the limit of {cap}, and has been destroyed.";
 static std::wstring g_message_color = L"1.0,0.2,0.2,1.0";
 static bool g_destroy_over_cap = false;
-static bool g_check_on_uncryo = true;
 static bool g_check_on_begin_play = false;
 
 static std::mutex g_destroy_mutex;
-static std::vector<APrimalDinoCharacter*> g_destroy_queue;
+static std::vector<TWeakObjectPtr<APrimalDinoCharacter>> g_destroy_queue;
 
 static std::mutex g_pending_mutex;
 static std::vector<PendingCheck> g_pending_checks;
@@ -152,9 +179,6 @@ static int g_reload_counter = 0;
 
 using ServerRequestLevelUp_t = void(*)(AShooterPlayerController*, UPrimalCharacterStatusComponent*, EPrimalCharacterStatusValue::Type);
 static ServerRequestLevelUp_t Original_ServerRequestLevelUp = nullptr;
-
-using OnUncryo_t = void(*)(APrimalDinoCharacter*, AShooterPlayerController*);
-static OnUncryo_t Original_OnUncryo = nullptr;
 
 using BeginPlay_t = void(*)(APrimalDinoCharacter*);
 static BeginPlay_t Original_BeginPlay = nullptr;
@@ -212,7 +236,7 @@ static std::string GetDinoClassName(AActor* actor)
     UClass* cls = actor->ClassField();
     if (!cls) return "";
 
-    return FStr(UVictoryCore::GetClassFName(cls).ToString());
+    return FStr(UVictoryCore::GetObjectName(cls).ToString());
 }
 
 static AShooterCharacter* GetRequesterCharacter(AShooterPlayerController* pc)
@@ -369,14 +393,6 @@ static void ApplyConfig(const nlohmann::json& j)
     if (j.contains("TotalDeniedMessage") && j["TotalDeniedMessage"].is_string())
         totalDenied = Widen(j["TotalDeniedMessage"].get<std::string>());
 
-    std::wstring overCap = L"This dino has more than {cap} point{s} in {stat} and has been destroyed.";
-    if (j.contains("OverCapDestroyMessage") && j["OverCapDestroyMessage"].is_string())
-        overCap = Widen(j["OverCapDestroyMessage"].get<std::string>());
-
-    std::wstring totalOverCap = L"This dino holds {total} points across all stats, above the limit of {cap}, and has been destroyed.";
-    if (j.contains("TotalOverCapDestroyMessage") && j["TotalOverCapDestroyMessage"].is_string())
-        totalOverCap = Widen(j["TotalOverCapDestroyMessage"].get<std::string>());
-
     std::wstring color = L"1.0,0.2,0.2,1.0";
     if (j.contains("MessageColor") && j["MessageColor"].is_string())
         color = Widen(j["MessageColor"].get<std::string>());
@@ -384,10 +400,6 @@ static void ApplyConfig(const nlohmann::json& j)
     bool destroy = false;
     if (j.contains("DestroyOverCapDino") && j["DestroyOverCapDino"].is_boolean())
         destroy = j["DestroyOverCapDino"].get<bool>();
-
-    bool checkUncryo = true;
-    if (j.contains("CheckOnUncryo") && j["CheckOnUncryo"].is_boolean())
-        checkUncryo = j["CheckOnUncryo"].get<bool>();
 
     bool checkBeginPlay = false;
     if (j.contains("CheckOnBeginPlay") && j["CheckOnBeginPlay"].is_boolean())
@@ -400,11 +412,8 @@ static void ApplyConfig(const nlohmann::json& j)
     g_dino_overrides = std::move(overrides);
     g_denied_message = std::move(denied);
     g_total_denied_message = std::move(totalDenied);
-    g_over_cap_message = std::move(overCap);
-    g_total_over_cap_message = std::move(totalOverCap);
     g_message_color = std::move(color);
     g_destroy_over_cap = destroy;
-    g_check_on_uncryo = checkUncryo;
     g_check_on_begin_play = checkBeginPlay;
 }
 
@@ -488,12 +497,14 @@ static void QueueDestroy(APrimalDinoCharacter* dino)
 {
     if (!dino) return;
 
+    TWeakObjectPtr<APrimalDinoCharacter> weak = GetWeakReference(dino);
+
     std::lock_guard<std::mutex> lock(g_destroy_mutex);
-    for (APrimalDinoCharacter* queued : g_destroy_queue)
+    for (const auto& queued : g_destroy_queue)
     {
-        if (queued == dino) return;
+        if (queued == weak) return;
     }
-    g_destroy_queue.push_back(dino);
+    g_destroy_queue.push_back(weak);
 }
 
 static void QueuePendingCheck(APrimalDinoCharacter* dino)
@@ -501,7 +512,7 @@ static void QueuePendingCheck(APrimalDinoCharacter* dino)
     if (!dino) return;
 
     PendingCheck pending;
-    pending.dino = dino;
+    pending.dino = GetWeakReference(dino);
     pending.checkAt = std::chrono::steady_clock::now() + std::chrono::seconds(BEGIN_PLAY_DELAY_SECONDS);
 
     std::lock_guard<std::mutex> lock(g_pending_mutex);
@@ -510,18 +521,18 @@ static void QueuePendingCheck(APrimalDinoCharacter* dino)
 
 static void FlushDestroyQueue()
 {
-    std::vector<APrimalDinoCharacter*> local;
+    std::vector<TWeakObjectPtr<APrimalDinoCharacter>> local;
     {
         std::lock_guard<std::mutex> lock(g_destroy_mutex);
         if (g_destroy_queue.empty()) return;
         local.swap(g_destroy_queue);
     }
 
-    for (APrimalDinoCharacter* dino : local)
+    for (auto& weak : local)
     {
+        APrimalDinoCharacter* dino = weak.Get();
         if (!dino) continue;
-        if (!UVictoryCore::BPIsValidLowLevelFast(dino)) continue;
-        if (dino->bActorIsBeingDestroyed()()) continue;
+        if (dino->IsBeingDestroyed()) continue;
 
         try { dino->Destroy(false, false); }
         catch (...) {}
@@ -571,29 +582,17 @@ static bool FindCapBreach(APrimalDinoCharacter* dino, const std::string& classNa
 }
 
 static void ReportBreach(APrimalDinoCharacter* dino, const std::string& className,
-    const CapBreach& breach, AShooterPlayerController* pc, const char* trigger)
+    const CapBreach& breach, const char* trigger)
 {
-    std::wstring message;
-    std::wstring color;
-    {
-        std::lock_guard<std::mutex> lock(g_config_mutex);
-        message = breach.isTotal ? g_total_over_cap_message : g_over_cap_message;
-        color = g_message_color;
-    }
-
     if (breach.isTotal)
     {
         Log::GetLog()->info("[StatCap] OVER_CAP_DESTROY trigger={} class={} reason=total applied={} cap={}",
             trigger, className, breach.applied, breach.cap);
-
-        Notify(pc, BuildTotalMessage(message, breach.cap, breach.applied), color);
     }
     else
     {
         Log::GetLog()->info("[StatCap] OVER_CAP_DESTROY trigger={} class={} reason=stat stat={} applied={} cap={}",
             trigger, className, STAT_NAMES[breach.statIndex], breach.applied, breach.cap);
-
-        Notify(pc, BuildStatMessage(message, breach.statIndex, breach.cap), color);
     }
 
     QueueDestroy(dino);
@@ -601,7 +600,7 @@ static void ReportBreach(APrimalDinoCharacter* dino, const std::string& classNam
 
 static void FlushPendingChecks()
 {
-    std::vector<APrimalDinoCharacter*> due;
+    std::vector<TWeakObjectPtr<APrimalDinoCharacter>> due;
 
     {
         std::lock_guard<std::mutex> lock(g_pending_mutex);
@@ -631,11 +630,11 @@ static void FlushPendingChecks()
 
     if (!enabled) return;
 
-    for (APrimalDinoCharacter* dino : due)
+    for (auto& weak : due)
     {
+        APrimalDinoCharacter* dino = weak.Get();
         if (!dino) continue;
-        if (!UVictoryCore::BPIsValidLowLevelFast(dino)) continue;
-        if (dino->bActorIsBeingDestroyed()()) continue;
+        if (dino->IsBeingDestroyed()) continue;
         if (dino->TamingTeamIDField() == 0) continue;
 
         const std::string className = GetDinoClassName(dino);
@@ -643,7 +642,7 @@ static void FlushPendingChecks()
         CapBreach breach;
         if (!FindCapBreach(dino, className, &breach)) continue;
 
-        ReportBreach(dino, className, breach, nullptr, "beginplay");
+        ReportBreach(dino, className, breach, "beginplay");
     }
 }
 
@@ -761,28 +760,6 @@ static void Detour_ServerRequestLevelUp(AShooterPlayerController* pc,
     Notify(pc, BuildStatMessage(message, idx, cap), color);
 }
 
-static void Detour_OnUncryo(APrimalDinoCharacter* dino, AShooterPlayerController* pc)
-{
-    Original_OnUncryo(dino, pc);
-
-    if (!dino) return;
-
-    bool enabled;
-    {
-        std::lock_guard<std::mutex> lock(g_config_mutex);
-        enabled = g_destroy_over_cap && g_check_on_uncryo;
-    }
-
-    if (!enabled) return;
-
-    const std::string className = GetDinoClassName(dino);
-
-    CapBreach breach;
-    if (!FindCapBreach(dino, className, &breach)) return;
-
-    ReportBreach(dino, className, breach, pc, "uncryo");
-}
-
 static void Detour_BeginPlay(APrimalDinoCharacter* dino)
 {
     Original_BeginPlay(dino);
@@ -825,12 +802,6 @@ static void PluginInit()
     );
 
     AsaApi::GetHooks().SetHook(
-        "APrimalDinoCharacter.OnUncryo(AShooterPlayerController*)",
-        (LPVOID)&Detour_OnUncryo,
-        (LPVOID*)&Original_OnUncryo
-    );
-
-    AsaApi::GetHooks().SetHook(
         "APrimalDinoCharacter.BeginPlay()",
         (LPVOID)&Detour_BeginPlay,
         (LPVOID*)&Original_BeginPlay
@@ -848,11 +819,6 @@ static void PluginUnload()
     AsaApi::GetHooks().DisableHook(
         "APrimalDinoCharacter.BeginPlay()",
         (LPVOID)&Detour_BeginPlay
-    );
-
-    AsaApi::GetHooks().DisableHook(
-        "APrimalDinoCharacter.OnUncryo(AShooterPlayerController*)",
-        (LPVOID)&Detour_OnUncryo
     );
 
     AsaApi::GetHooks().DisableHook(
