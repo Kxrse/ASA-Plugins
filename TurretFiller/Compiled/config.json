@@ -1,0 +1,52 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "DB_USER",
+    "DbPassword": "DB_PASSWORD",
+    "DbName": "DB_NAME",
+    "Default": {
+        "FillEnabled": true,
+        "MaxFillRange": 100.0,
+        "MinFillRange": 10.0,
+        "DefaultFillRange": 50.0,
+        "CommandCooldown": 30,
+        "CombatCooldown": 300
+    },
+    "Groups": {
+        "Admins": {
+            "Priority": 1,
+            "FillEnabled": true,
+            "MaxFillRange": 250.0,
+            "MinFillRange": 10.0,
+            "DefaultFillRange": 100.0,
+            "CommandCooldown": 5,
+            "CombatCooldown": 60
+        },
+        "Vip": {
+            "Priority": 2,
+            "FillEnabled": true,
+            "MaxFillRange": 150.0,
+            "MinFillRange": 10.0,
+            "DefaultFillRange": 75.0,
+            "CommandCooldown": 15,
+            "CombatCooldown": 180
+        }
+    },
+    "TurretAmmoMap": [
+        {
+            "TurretBP": "Blueprint'/Game/PrimalEarth/Structures/BuildingBases/StructureTurretBaseBP.StructureTurretBaseBP'",
+            "AmmoName": "Advanced Rifle Bullet",
+            "AmmoBP": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItemAmmo_AdvancedRifleBullet.PrimalItemAmmo_AdvancedRifleBullet'"
+        },
+        {
+            "TurretBP": "Blueprint'/Game/PrimalEarth/Structures/BuildingBases/StructureTurretBaseBP_Heavy.StructureTurretBaseBP_Heavy'",
+            "AmmoName": "Advanced Rifle Bullet",
+            "AmmoBP": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItemAmmo_AdvancedRifleBullet.PrimalItemAmmo_AdvancedRifleBullet'"
+        },
+        {
+            "TurretBP": "Blueprint'/Game/PrimalEarth/Structures/BuildingBases/StructureTurretTek.StructureTurretTek'",
+            "AmmoName": "Element Shard",
+            "AmmoBP": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_ElementShard.PrimalItemResource_ElementShard'"
+        }
+    ]
+}
