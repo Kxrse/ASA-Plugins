@@ -1,7 +1,0 @@
-{	"DbHost": "localhost",
-    "DbPort": 3306,
-    "DbUser": "",
-    "DbPassword": "",
-    "DbName": "",
-    "message_color": "0.918,0.918,0.918,1"
-}
