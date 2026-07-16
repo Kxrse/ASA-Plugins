@@ -1,0 +1,23 @@
+{
+    "GrantDelaySeconds": 10,
+    "GrantTimeoutSeconds": 180,
+    "Default": {
+        "EngramMode": "All",
+        "ExplorerNotes": true,
+        "Skills": true
+    },
+    "Groups": {
+        "Admins": {
+            "Priority": 1,
+            "EngramMode": "All",
+            "ExplorerNotes": true,
+            "Skills": true
+        },
+        "Vip": {
+            "Priority": 2,
+            "EngramMode": "TekOnly",
+            "ExplorerNotes": true,
+            "Skills": false
+        }
+    }
+}
