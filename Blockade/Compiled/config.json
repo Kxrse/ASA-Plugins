@@ -1,0 +1,21 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "User",
+    "DbPass": "Password",
+    "DbName": "Database",
+    "RaidBlockRadius": 10000.0,
+    "ImmuneEosIds": [
+        "EOS_ID"
+    ],
+    "CombatBlockEnabled": true,
+    "CombatBlockSeconds": 30,
+    "CombatBlockMessage": "Combat Blocked: {seconds}s",
+    "CombatBlockClearedMessage": "No longer combat blocked",
+    "CombatBlockNotifyInterval": 10,
+    "RaidBlockEnabled": true,
+    "RaidBlockSeconds": 300,
+    "RaidBlockMessage": "Raid Block Active",
+    "RaidBlockClearedMessage": "Raid Block Removed",
+    "RaidBlockNotifyInterval": 30
+}
