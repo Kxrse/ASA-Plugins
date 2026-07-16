@@ -1,0 +1,25 @@
+{
+    "WebhookUrl": "https://discord.com/api/webhooks/ID/TOKEN",
+    "UpdateIntervalSeconds": 30,
+    "DefaultColor": "FF7A00",
+    "MapNames": {
+        "TheIsland_WP": "The Island",
+        "ScorchedEarth_WP": "Scorched Earth",
+        "TheCenter_WP": "The Center",
+        "Aberration_WP": "Aberration",
+        "Extinction_WP": "Extinction",
+        "Ragnarok_WP": "Ragnarok",
+        "Astraeos_WP": "Astraeos",
+        "Genesis_WP": "Genesis 1"
+    },
+    "MapColors": {
+        "TheIsland_WP": "3BA55D",
+        "ScorchedEarth_WP": "E67E22",
+        "TheCenter_WP": "1ABC9C",
+        "Aberration_WP": "9B59B6",
+        "Extinction_WP": "95A5A6",
+        "Ragnarok_WP": "3498DB",
+        "Astraeos_WP": "F1C40F",
+        "Genesis_WP": "E91E63"
+    }
+}
