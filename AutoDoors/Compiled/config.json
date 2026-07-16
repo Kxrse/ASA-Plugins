@@ -1,0 +1,16 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "User",
+    "DbPassword": "Password",
+    "DbName": "Database",
+    "DefaultEnabled": true,
+    "DefaultDelay": 5,
+    "MinDelay": 1,
+    "MaxDelay": 30,
+    "EnabledMessage": "Auto doors on, {delay}s delay.",
+    "DisabledMessage": "Auto doors off.",
+    "DelayMessage": "Auto door delay set to {delay}s.",
+    "UsageMessage": "Usage: /ad to toggle, /ad <seconds> to set the delay.",
+    "MessageColor": "1.0,1.0,1.0,1.0"
+}
