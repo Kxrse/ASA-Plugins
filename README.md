@@ -15,6 +15,7 @@
 | [SurvivorTracker](SurvivorTracker/) | Released | Tracks survivor identity and tribe membership per map to a database across a cluster. |
 | [TurretFiller](TurretFiller/) | Released | Refills nearby turrets with ammo pulled from a player's inventory via a chat command. |
 | [TurretSlotCap](TurretSlotCap/) | Released | Caps the usable ammo slots on turrets by blueprint path. Config hot-reloads live. No database. |
+| [UnlockAll](UnlockAll/) | Released | Grants engrams, explorer notes, and skills on join, gated per Permissions group by a priority ranked tier system with a Default tier for everyone else. Waits until the character exists before granting, so it covers first spawn, reconnects, and transfer arrivals, and re-grants after a mindwipe or on new character creation. Engrams are per tier, either all or tek only, and the Lost Colony notes unlock for players who own it. Config hot-reloads live. No database. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)
