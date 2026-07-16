@@ -1,0 +1,8 @@
+{
+    "MessageColor": "0.902,0.365,0.137,1",
+    "JoinMessage": "You have been automatically placed into a tribe.",
+    "RetryIntervalMs": 1000,
+    "LeaveSettleMs": 1000,
+    "MaxAttempts": 30,
+    "MaxNameLength": 24
+}
