@@ -1,0 +1,16 @@
+{
+    "TurretSlotMap": [
+        {
+            "TurretBP": "Blueprint'/Game/PrimalEarth/Structures/BuildingBases/StructureTurretBaseBP.StructureTurretBaseBP'",
+            "Slots": 5
+        },
+        {
+            "TurretBP": "Blueprint'/Game/PrimalEarth/Structures/BuildingBases/StructureTurretBaseBP_Heavy.StructureTurretBaseBP_Heavy'",
+            "Slots": 5
+        },
+        {
+            "TurretBP": "Blueprint'/Game/PrimalEarth/Structures/BuildingBases/StructureTurretTek.StructureTurretTek'",
+            "Slots": 2
+        }
+    ]
+}
