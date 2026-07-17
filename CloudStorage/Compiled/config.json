@@ -1,0 +1,27 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "DbUser",
+    "DbPassword": "Password",
+    "DbName": "DbName",
+    "MessageColor": "0, 1, 0.65, 1",
+    "UploadCommand": "/upload",
+    "DownloadCommand": "/download",
+    "ListCommand": "/ulist",
+    "UploadAllCommand": "/uploadall",
+    "DownloadAllCommand": "/downloadall",
+    "ListPageSize": 5,
+    "DefaultSlots": 5,
+    "AllowBlueprints": false,
+    "Groups": {
+        "Admins": 100,
+        "Vip": 25
+    },
+    "Abbreviations": {
+        "Advanced Rifle Bullet": "arb",
+        "Metal Ingot": "ingot"
+    },
+    "BlacklistedBlueprints": [
+        "Blueprint'/Game/PrimalEarth/CoreBlueprints/Items/PrimalItem_Example.PrimalItem_Example'"
+    ]
+}
