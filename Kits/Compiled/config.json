@@ -1,0 +1,43 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "arkuser",
+    "DbPass": "Password",
+    "DbName": "arkcluster",
+    "CryopodBlueprint": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponEmptyCryopod.PrimalItem_WeaponEmptyCryopod'",
+    "PelayoriCryopodBlueprint": "Blueprint'/Cryopods/Cryopods/PrimalItem_WeaponEmptyCryopod_Mod.PrimalItem_WeaponEmptyCryopod_Mod'",
+    "UsePelayoriCryo": false,
+    "MessageColor": "1.0,1.0,1.0,1.0",
+    "Kits": [
+        {
+            "Name": "Starter",
+            "Number": 1,
+            "Items": [
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_Berry_Mejoberry.PrimalItemConsumable_Berry_Mejoberry'",
+                    "Quantity": 100,
+                    "Quality": 0.0
+                }
+            ],
+            "Dinos": [
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/Dinos/Dodo/Dodo_Character_BP.Dodo_Character_BP'",
+                    "Level": 150,
+                    "Neutered": false
+                }
+            ],
+            "Ranks": [
+                {
+                    "Group": "default",
+                    "CooldownSeconds": 86400,
+                    "MaxUses": 1
+                },
+                {
+                    "Group": "vip",
+                    "CooldownSeconds": 3600,
+                    "MaxUses": 0
+                }
+            ]
+        }
+    ]
+}
