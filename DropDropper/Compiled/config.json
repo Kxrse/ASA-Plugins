@@ -1,0 +1,72 @@
+{
+    "Whitelist": [
+        "EOS_ID"
+    ],
+    "Drops": {
+        "default": {
+            "white": "SupplyCrate_Level03_C",
+            "whitering": "SupplyCrate_Level03_Double_C",
+            "green": "SupplyCrate_Level15_C",
+            "greenring": "SupplyCrate_Level15_Double_C",
+            "blue": "SupplyCrate_Level25_C",
+            "bluering": "SupplyCrate_Level25_Double_C",
+            "purple": "SupplyCrate_Level35_C",
+            "purplering": "SupplyCrate_Level35_Double_C",
+            "yellow": "SupplyCrate_Level45_C",
+            "yellowring": "SupplyCrate_Level45_Double_C",
+            "red": "SupplyCrate_Level60_C",
+            "redring": "SupplyCrate_Level60_Double_C"
+        }
+    },
+    "CaveDrops": {
+        "default": {
+            "blue": "SupplyCrate_Cave_QualityTier1_C",
+            "green": "SupplyCrate_Cave_QualityTier2_C",
+            "purple": "SupplyCrate_Cave_QualityTier3_C",
+            "red": "SupplyCrate_Cave_QualityTier4_C"
+        }
+    },
+    "MassDrops": {
+        "default": {
+            "white": "/Game/PrimalEarth/Structures/SupplyCrate_Level03.SupplyCrate_Level03",
+            "whitering": "/Game/PrimalEarth/Structures/SupplyCrate_Level03_Double.SupplyCrate_Level03_Double",
+            "green": "/Game/PrimalEarth/Structures/SupplyCrate_Level15.SupplyCrate_Level15",
+            "greenring": "/Game/PrimalEarth/Structures/SupplyCrate_Level15_Double.SupplyCrate_Level15_Double",
+            "blue": "/Game/PrimalEarth/Structures/SupplyCrate_Level25.SupplyCrate_Level25",
+            "bluering": "/Game/PrimalEarth/Structures/SupplyCrate_Level25_Double.SupplyCrate_Level25_Double",
+            "purple": "/Game/PrimalEarth/Structures/SupplyCrate_Level35.SupplyCrate_Level35",
+            "purplering": "/Game/PrimalEarth/Structures/SupplyCrate_Level35_Double.SupplyCrate_Level35_Double",
+            "yellow": "/Game/PrimalEarth/Structures/SupplyCrate_Level45.SupplyCrate_Level45",
+            "yellowring": "/Game/PrimalEarth/Structures/SupplyCrate_Level45_Double.SupplyCrate_Level45_Double",
+            "red": "/Game/PrimalEarth/Structures/SupplyCrate_Level60.SupplyCrate_Level60",
+            "redring": "/Game/PrimalEarth/Structures/SupplyCrate_Level60_Double.SupplyCrate_Level60_Double"
+        }
+    },
+    "CaveMassDrops": {
+        "default": {
+            "blue": "/Game/PrimalEarth/Structures/SupplyCrate_Cave_QualityTier1.SupplyCrate_Cave_QualityTier1",
+            "green": "/Game/PrimalEarth/Structures/SupplyCrate_Cave_QualityTier2.SupplyCrate_Cave_QualityTier2",
+            "purple": "/Game/PrimalEarth/Structures/SupplyCrate_Cave_QualityTier3.SupplyCrate_Cave_QualityTier3",
+            "red": "/Game/PrimalEarth/Structures/SupplyCrate_Cave_QualityTier4.SupplyCrate_Cave_QualityTier4"
+        }
+    },
+    "PartyPool": [
+        "white",
+        "green",
+        "blue",
+        "purple",
+        "purplering",
+        "yellow",
+        "yellowring",
+        "red",
+        "redring"
+    ],
+    "CavePartyPool": [
+        "blue",
+        "green",
+        "purple",
+        "red"
+    ],
+    "MassDropMax": 30,
+    "MassDropSpread": 8000.0
+}
