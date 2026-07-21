@@ -1172,6 +1172,44 @@ static void PluginUnload()
     Log::GetLog()->info("[Blockade] Unloaded");
 }
 
+extern "C" __declspec(dllexport) bool Blockade_IsCombatBlocked(const FString& eosId, int& outRemainingSeconds)
+{
+    outRemainingSeconds = 0;
+    if (!g_combat_block_enabled) return false;
+
+    const std::string eos = FStr(eosId);
+    if (eos.empty()) return false;
+
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_combat_mutex);
+
+    auto it = g_combat_times.find(eos);
+    if (it == g_combat_times.end()) return false;
+
+    const int elapsed = (int)std::chrono::duration_cast<std::chrono::seconds>(now - it->second.lastHit).count();
+    const int remaining = it->second.blockSeconds - elapsed;
+    if (remaining <= 0) return false;
+
+    outRemainingSeconds = remaining;
+    return true;
+}
+
+extern "C" __declspec(dllexport) bool Blockade_IsRaidBlocked(const FString& eosId)
+{
+    if (!g_raid_block_enabled) return false;
+
+    const std::string eos = FStr(eosId);
+    if (eos.empty()) return false;
+
+    const long long now = (long long)time(nullptr);
+    std::lock_guard<std::mutex> lock(g_raid_mutex);
+
+    auto it = g_raid_blocked_players.find(eos);
+    if (it == g_raid_blocked_players.end()) return false;
+
+    return it->second.writtenExpiry > now;
+}
+
 extern "C" __declspec(dllexport) void Plugin_Init()
 {
     try { PluginInit(); }
