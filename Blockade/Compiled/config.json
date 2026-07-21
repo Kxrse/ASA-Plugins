@@ -1,9 +1,4 @@
 {
-    "DbHost": "127.0.0.1",
-    "DbPort": 3306,
-    "DbUser": "User",
-    "DbPass": "Password",
-    "DbName": "Database",
     "RaidBlockRadius": 10000.0,
     "ImmuneEosIds": [
         "EOS_ID"
