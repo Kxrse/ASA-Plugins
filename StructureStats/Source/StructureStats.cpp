@@ -462,7 +462,7 @@ static void SeedCacheFromPC(APlayerController* pc)
     AShooterCharacter* ch = static_cast<AShooterCharacter*>(pawn);
     if (!ch) return;
 
-    const uint64_t survivorId = ch->GetLinkedPlayerDataID();
+    const uint64_t survivorId = ch->LinkedPlayerDataIDField();
     if (survivorId == 0) return;
 
     FString nameRaw = ch->PlayerNameField();
