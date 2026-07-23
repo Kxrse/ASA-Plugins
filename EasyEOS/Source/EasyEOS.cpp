@@ -230,7 +230,7 @@ static void Cmd_Eos(AShooterPlayerController* pc, FString* /*message*/, int, int
     {
         AShooterCharacter* ch = static_cast<AShooterCharacter*>(actor);
         survivorName = FStr(ch->PlayerNameField());
-        survivorId = ch->GetLinkedPlayerDataID();
+        survivorId = ch->LinkedPlayerDataIDField();
     }
 
     Log::GetLog()->info("[EasyEOS] eos={} survivor='{}' survivorId={}", eos, survivorName, survivorId);
