@@ -458,7 +458,7 @@ static bool BuildRecord(AShooterPlayerController* spc, SurvivorRecord& out)
     if (!ch) return false;
 
     out.eosId = eosId;
-    out.survivorId = ch->GetLinkedPlayerDataID();
+    out.survivorId = ch->LinkedPlayerDataIDField();
     out.survivorName = FStr(ch->PlayerNameField());
     out.mapName = GetMapName();
     out.tribeId = ps->GetTribeId();
@@ -612,7 +612,7 @@ void Detour_StartNewShooterPlayer(AShooterGameMode* gm,
     AShooterCharacter* ch = spc->BaseGetPlayerCharacter();
     if (!ch) return;
 
-    const uint64_t newSurvivorId = ch->GetLinkedPlayerDataID();
+    const uint64_t newSurvivorId = ch->LinkedPlayerDataIDField();
     if (newSurvivorId == 0) return;
 
     const std::string survivorName = FStr(ch->PlayerNameField());
@@ -772,7 +772,7 @@ void Detour_RenamePlayer(AShooterCharacter* character, const FString* newName)
     const std::string eosId = GetEosFromState(ps);
     if (eosId.empty()) return;
 
-    const uint64_t survivorId = character->GetLinkedPlayerDataID();
+    const uint64_t survivorId = character->LinkedPlayerDataIDField();
 
     std::lock_guard<std::mutex> lock(g_cache_mutex);
     auto it = g_cache.find(eosId);
