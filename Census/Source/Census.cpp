@@ -370,7 +370,7 @@ static void BuildRoster(std::vector<PlayerRow>& out)
         row.eosId = Sanitize(eos);
 
         FString nameRaw;
-        ps->GetPlayerName(&nameRaw);
+        nameRaw = ps->MyPlayerDataStructField().PlayerNameField();
         row.survivorName = Sanitize(FStr(nameRaw));
 
         row.implantId = ps->MyPlayerDataStructField().PlayerDataIDField();
