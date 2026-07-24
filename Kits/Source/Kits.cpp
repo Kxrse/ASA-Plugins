@@ -678,7 +678,7 @@ static bool ValidateKit(AShooterPlayerController* pc, const Kit& k)
 static TArray<float> GetStatPoints(APrimalDinoCharacter* dino)
 {
     TArray<float> floats;
-    UPrimalCharacterStatusComponent* comp = dino->GetCharacterStatusComponent();
+    UPrimalCharacterStatusComponent* comp = dino->MyCharacterStatusComponentField();
     int NumEntries = EPrimalCharacterStatusValue::MAX - 1;
     for (int i = 0; i < NumEntries; i++)
         floats.Add(static_cast<float>(
@@ -694,7 +694,7 @@ static TArray<float> GetStatPoints(APrimalDinoCharacter* dino)
 static TArray<float> GetCharacterStatsAsFloats(APrimalDinoCharacter* dino)
 {
     TArray<float> floats;
-    UPrimalCharacterStatusComponent* comp = dino->GetCharacterStatusComponent();
+    UPrimalCharacterStatusComponent* comp = dino->MyCharacterStatusComponentField();
     int NumEntries = EPrimalCharacterStatusValue::MAX - 1;
     for (int i = 0; i < NumEntries; i++)
         floats.Add(comp->CurrentStatusValuesField()()[(EPrimalCharacterStatusValue::Type)i]);
