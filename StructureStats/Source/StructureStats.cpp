@@ -488,7 +488,7 @@ static bool ResolvePlayer(AController* controller,
     std::string& outTribeName, int& outTribeId, bool& outInTribe)
 {
     if (!controller) return false;
-    if (!controller->IsA(AShooterPlayerController::StaticClass())) return false;
+    if (!controller->IsA(AShooterPlayerController::GetPrivateStaticClass())) return false;
 
     AShooterPlayerController* pc = static_cast<AShooterPlayerController*>(controller);
     AShooterPlayerState* ps =
@@ -923,7 +923,7 @@ bool Detour_StructureDie(APrimalStructure* structure,
     if (!structure) return result;
     if (IsDuplicateDie(structure)) return result;
     if (!killer) return result;
-    if (!killer->IsA(AShooterPlayerController::StaticClass())) return result;
+    if (!killer->IsA(AShooterPlayerController::GetPrivateStaticClass())) return result;
 
     AShooterPlayerController* killerPC = static_cast<AShooterPlayerController*>(killer);
     AShooterCharacter* killerCh = killerPC->BaseGetPlayerCharacter();

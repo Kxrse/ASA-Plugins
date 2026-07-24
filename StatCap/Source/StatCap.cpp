@@ -677,7 +677,7 @@ static void Detour_ServerRequestLevelUp(AShooterPlayerController* pc,
         return;
     }
 
-    const bool isDino = owner->IsA(APrimalDinoCharacter::StaticClass());
+    const bool isDino = owner->IsA(APrimalDinoCharacter::GetPrivateStaticClass());
 
     if (isDino)
     {

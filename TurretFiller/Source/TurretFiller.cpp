@@ -956,7 +956,7 @@ static void Cmd_Fill(AShooterPlayerController* pc, FString*, int, int)
 
     TArray<AActor*> allTurrets;
     UGameplayStatics::GetAllActorsOfClass(world,
-        APrimalStructureTurret::StaticClass(), &allTurrets);
+    APrimalStructureTurret::GetPrivateStaticClass(), &allTurrets);
 
     struct TurretEntry { UPrimalInventoryComponent* inv; };
     struct AmmoGroup

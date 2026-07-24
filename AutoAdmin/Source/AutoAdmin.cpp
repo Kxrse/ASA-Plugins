@@ -345,7 +345,7 @@ static bool ShouldBlockCheat(APlayerController* pc, const FString* Msg)
     Log::GetLog()->info("[AutoAdmin] Blocked command from {} ({}): {}",
         it->second.alias, eosId, rawCmd);
 
-    if (pc->IsA(AShooterPlayerController::StaticClass()))
+    if (pc->IsA(AShooterPlayerController::GetPrivateStaticClass()))
     {
         AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(pc);
         FLinearColor red{ 1.0f, 0.0f, 0.0f, 1.0f };
@@ -524,7 +524,7 @@ static void SyncOnlinePlayersAfterReload()
 void Detour_PostLogin(AShooterGameMode* gm, APlayerController* pc)
 {
     Original_PostLogin(gm, pc);
-    if (pc && pc->IsA(AShooterPlayerController::StaticClass()))
+    if (pc && pc->IsA(AShooterPlayerController::GetPrivateStaticClass()))
         QueueIfAdmin(static_cast<AShooterPlayerController*>(pc));
 }
 
@@ -564,7 +564,7 @@ void Detour_RemoteServerCheat(AShooterPlayerController* spc, const FString* Msg)
 
 void Detour_Logout(AShooterGameMode* gm, AController* controller)
 {
-    if (controller && controller->IsA(AShooterPlayerController::StaticClass()))
+    if (controller && controller->IsA(AShooterPlayerController::GetPrivateStaticClass()))
     {
         AShooterPlayerController* spc = static_cast<AShooterPlayerController*>(controller);
         const std::string eosId = GetEosFromController(spc);
