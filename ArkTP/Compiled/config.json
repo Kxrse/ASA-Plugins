@@ -1,0 +1,37 @@
+{
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "User",
+    "DbPassword": "Password",
+    "DbName": "Database",
+    "AdminEosIds": [
+        "EOS_ID"
+    ],
+    "MessageColor": "1.0,1.0,1.0,1.0",
+    "TpaTimeoutSeconds": 30,
+    "CombatBlockEnabled": true,
+    "RaidBlockEnabled": true,
+    "Default": {
+        "MaxHomes": 1,
+        "TeleportDelaySeconds": 10,
+        "CooldownSeconds": 300,
+        "FoundationRequired": true,
+        "AllowCliffPlatforms": false,
+        "AllowVacuumCompartments": false,
+        "AllowTreePlatforms": false,
+        "AllowNoBuildZones": false
+    },
+    "Groups": {
+        "VIP": {
+            "Priority": 1,
+            "MaxHomes": 3,
+            "TeleportDelaySeconds": 5,
+            "CooldownSeconds": 120,
+            "FoundationRequired": true,
+            "AllowCliffPlatforms": true,
+            "AllowVacuumCompartments": true,
+            "AllowTreePlatforms": true,
+            "AllowNoBuildZones": false
+        }
+    }
+}
