@@ -1,0 +1,79 @@
+{
+    "DeliverDelay": 1,
+    "UnlockTekEngrams": true,
+    "AllowSaveKit": true,
+    "SaveKitCooldown": 30,
+    "DbHost": "127.0.0.1",
+    "DbPort": 3306,
+    "DbUser": "User",
+    "DbPass": "Password",
+    "DbName": "arkcluster",
+    "Groups": {
+        "Admins": {
+            "Priority": 1,
+            "Recurring": true,
+            "Items": [
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Items/Armor/Metal/PrimalItemArmor_MetalHelmet.PrimalItemArmor_MetalHelmet'",
+                    "Quantity": 1,
+                    "Quality": 15.0,
+                    "Equip": true,
+                    "Slot": -1,
+                    "Tier": "Ascendant"
+                },
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Items/Armor/Shields/PrimalItemArmor_MetalShield.PrimalItemArmor_MetalShield'",
+                    "Quantity": 1,
+                    "Quality": 0.0,
+                    "Equip": true,
+                    "Slot": -1
+                },
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponMetalPick.PrimalItem_WeaponMetalPick'",
+                    "Quantity": 1,
+                    "Quality": 0.0,
+                    "Equip": false,
+                    "Slot": 1,
+                    "Tier": "Ascendant"
+                },
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponOneShotRifle.PrimalItem_WeaponOneShotRifle'",
+                    "Quantity": 1,
+                    "Quality": 15.0,
+                    "Equip": false,
+                    "Slot": 2,
+                    "Tier": "Ascendant",
+                    "ClipAmmo": 1
+                },
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Items/Consumables/PrimalItemConsumable_HealSoup.PrimalItemConsumable_HealSoup'",
+                    "Quantity": 50,
+                    "Quality": 0.0,
+                    "Equip": false,
+                    "Slot": 0
+                },
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItemAmmo_SimpleRifleBullet.PrimalItemAmmo_SimpleRifleBullet'",
+                    "Quantity": 100,
+                    "Quality": 0.0,
+                    "Equip": false,
+                    "Slot": -1
+                }
+            ]
+        },
+        "Default": {
+            "Priority": 2,
+            "Recurring": false,
+            "Items": [
+                {
+                    "BlueprintPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponStoneHatchet.PrimalItem_WeaponStoneHatchet'",
+                    "Quantity": 1,
+                    "Quality": 0.0,
+                    "Equip": false,
+                    "Slot": 1,
+                    "Tier": "Primitive"
+                }
+            ]
+        }
+    }
+}
