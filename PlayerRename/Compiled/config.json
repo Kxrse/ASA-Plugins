@@ -1,0 +1,9 @@
+{
+    "MinLength": 3,
+    "MaxLength": 24,
+    "BlockedNames": [
+        "admin",
+        "moderator",
+        "server"
+    ]
+}
