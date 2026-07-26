@@ -1,0 +1,38 @@
+{
+    "LogUnmatchedCrates": false,
+    "LootSets": {
+        "WhiteSurface": {
+            "SetsPerCrate": 3,
+            "QualityMultiplier": 1.0,
+            "Entries": [
+                {
+                    "ItemPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Resources/PrimalItemResource_Stone.PrimalItemResource_Stone'",
+                    "MinQuantity": 50,
+                    "MaxQuantity": 200,
+                    "MinQuality": 0.0,
+                    "MaxQuality": 0.0,
+                    "Weight": 0.0,
+                    "Guaranteed": true,
+                    "IsBlueprint": false,
+                    "BlueprintChance": 0.0
+                },
+                {
+                    "ItemPath": "Blueprint'/Game/PrimalEarth/CoreBlueprints/Weapons/PrimalItem_WeaponPike.PrimalItem_WeaponPike'",
+                    "MinQuantity": 1,
+                    "MaxQuantity": 1,
+                    "MinQuality": 0.5,
+                    "MaxQuality": 2.5,
+                    "Weight": 10.0,
+                    "Guaranteed": false,
+                    "IsBlueprint": false,
+                    "BlueprintChance": 15.0
+                }
+            ]
+        }
+    },
+    "Crates": {
+        "default": {
+            "SupplyCrate_Level03": "WhiteSurface"
+        }
+    }
+}
