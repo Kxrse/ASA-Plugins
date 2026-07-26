@@ -24,9 +24,11 @@ Commercial use or resale is not permitted without explicit permission.
  *           running map name, falling back to the "default" key. Crate asset names are matched
  *           case insensitively with any _C suffix stripped, so SupplyCrate_Level03 matches
  *           SupplyCrate_Level03_C and never matches SupplyCrate_Level03_Double_C.
- *   LootSets: named reusable tables, each holding SetsPerCrate, QualityMultiplier and Entries.
- *   SetsPerCrate: number of weighted rolls per crate. Rolls are with replacement, so one entry can
- *                 win more than once. Guaranteed entries always spawn and do not consume a roll.
+ *   LootSets: named reusable tables, each holding a roll range, a quality scalar and Entries.
+ *   MinSetsPerCrate, MaxSetsPerCrate: inclusive range of weighted rolls run per crate. A fresh
+ *           count is rolled for every crate. Rolls are with replacement, so one entry can win more
+ *           than once. Guaranteed entries always spawn and do not consume a roll.
+ *   SetsPerCrate: shorthand accepted in place of the pair, sets both to the same value.
  *   QualityMultiplier: scalar applied to every rolled quality in the set.
  *   Entries: ItemPath, MinQuantity, MaxQuantity, MinQuality, MaxQuality, Weight, Guaranteed,
  *            IsBlueprint, BlueprintChance. Quantity is per winning roll, not per crate.
@@ -37,7 +39,8 @@ Commercial use or resale is not permitted without explicit permission.
  *   "LogUnmatchedCrates": false,
  *   "LootSets": {
  *     "WhiteSurface": {
- *       "SetsPerCrate": 3,
+ *       "MinSetsPerCrate": 3,
+ *       "MaxSetsPerCrate": 5,
  *       "QualityMultiplier": 1.0,
  *       "Entries": [
  *         {
@@ -116,7 +119,8 @@ struct LootEntry
 
 struct LootSet
 {
-    int SetsPerCrate = 0;
+    int MinSetsPerCrate = 0;
+    int MaxSetsPerCrate = 0;
     float QualityMultiplier = 1.0f;
     std::vector<LootEntry> Entries;
 };
@@ -269,7 +273,29 @@ static bool LoadConfig()
         LootSet set;
 
         if (node.contains("SetsPerCrate") && node["SetsPerCrate"].is_number_integer())
-            set.SetsPerCrate = node["SetsPerCrate"].get<int>();
+        {
+            const int shorthand = node["SetsPerCrate"].get<int>();
+            set.MinSetsPerCrate = shorthand;
+            set.MaxSetsPerCrate = shorthand;
+        }
+
+        if (node.contains("MinSetsPerCrate") && node["MinSetsPerCrate"].is_number_integer())
+            set.MinSetsPerCrate = node["MinSetsPerCrate"].get<int>();
+
+        if (node.contains("MaxSetsPerCrate") && node["MaxSetsPerCrate"].is_number_integer())
+            set.MaxSetsPerCrate = node["MaxSetsPerCrate"].get<int>();
+
+        if (set.MinSetsPerCrate < 0)
+        {
+            Log::GetLog()->error("[BeaconLoot] LootSet '{}' has a negative MinSetsPerCrate", setName);
+            return false;
+        }
+
+        if (set.MaxSetsPerCrate < set.MinSetsPerCrate)
+        {
+            Log::GetLog()->error("[BeaconLoot] LootSet '{}' has MaxSetsPerCrate below MinSetsPerCrate", setName);
+            return false;
+        }
 
         if (node.contains("QualityMultiplier") && node["QualityMultiplier"].is_number())
             set.QualityMultiplier = node["QualityMultiplier"].get<float>();
@@ -523,11 +549,18 @@ static void FillCrate(UPrimalInventoryComponent* inv, const LootSet& set)
         totalWeight += e.Weight;
     }
 
-    if (set.SetsPerCrate <= 0 || pool.empty() || totalWeight <= 0.0f) return;
+    if (set.MaxSetsPerCrate <= 0 || pool.empty() || totalWeight <= 0.0f) return;
+
+    int rolls = set.MinSetsPerCrate;
+    if (set.MaxSetsPerCrate > set.MinSetsPerCrate)
+    {
+        std::uniform_int_distribution<int> rd(set.MinSetsPerCrate, set.MaxSetsPerCrate);
+        rolls = rd(Rng());
+    }
 
     std::uniform_real_distribution<float> pick(0.0f, totalWeight);
 
-    for (int i = 0; i < set.SetsPerCrate; ++i)
+    for (int i = 0; i < rolls; ++i)
     {
         float target = pick(Rng());
 

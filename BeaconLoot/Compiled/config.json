@@ -2,7 +2,8 @@
     "LogUnmatchedCrates": false,
     "LootSets": {
         "WhiteSurface": {
-            "SetsPerCrate": 3,
+            "MinSetsPerCrate": 3,
+            "MaxSetsPerCrate": 5,
             "QualityMultiplier": 1.0,
             "Entries": [
                 {
