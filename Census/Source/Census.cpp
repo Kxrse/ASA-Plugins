@@ -59,9 +59,13 @@ Commercial use or resale is not permitted without explicit permission.
  *   MessageId: persisted Discord message id used for edit in place across restarts
  *
  * Roster:
- *   Read from AShooterGameState PlayerArray. EOS id, survivor name, implant id and
- *   tribe all come off AShooterPlayerState, so no actor enumeration and no character
- *   dereference happen, and players still loading in are listed with real values.
+ *   Read from AShooterGameState PlayerArray. EOS id, implant id and tribe come off
+ *   AShooterPlayerState directly. The survivor name comes from the player data at
+ *   MyPlayerData MyData MyPlayerCharacterConfig PlayerCharacterName, which is the
+ *   field a rename writes. FPrimalPlayerDataStruct PlayerName is the account name
+ *   and does not track renames, so it is not used here.
+ *   No actor enumeration and no character dereference happen, so players still
+ *   loading in are listed with real values.
  *
  * Traffic:
  *   The roster signature is hashed every interval and the embed is only sent when it
@@ -345,6 +349,17 @@ static int ResolveColor()
 // Roster
 // =============================================================================
 
+static std::string ResolveSurvivorName(AShooterPlayerState* ps)
+{
+    UPrimalPlayerData* playerData = ps->MyPlayerDataField();
+    if (!playerData) return "unknown";
+
+    FPrimalPlayerDataStruct* data = playerData->MyDataField();
+    if (!data) return "unknown";
+
+    return Sanitize(FStr(data->MyPlayerCharacterConfigField().PlayerCharacterNameField()));
+}
+
 static void BuildRoster(std::vector<PlayerRow>& out)
 {
     UWorld* world = AsaApi::GetApiUtils().GetWorld();
@@ -369,9 +384,7 @@ static void BuildRoster(std::vector<PlayerRow>& out)
         PlayerRow row;
         row.eosId = Sanitize(eos);
 
-        FString nameRaw;
-        nameRaw = ps->MyPlayerDataStructField().PlayerNameField();
-        row.survivorName = Sanitize(FStr(nameRaw));
+        row.survivorName = ResolveSurvivorName(ps);
 
         row.implantId = ps->MyPlayerDataStructField().PlayerDataIDField();
 
