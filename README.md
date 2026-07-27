@@ -26,6 +26,7 @@
 | [TurretFiller](TurretFiller/) | Released | Refills nearby turrets with ammo pulled from a player's inventory via a chat command. |
 | [TurretSlotCap](TurretSlotCap/) | Released | Caps the usable ammo slots on turrets by blueprint path. Config hot-reloads live. No database. |
 | [UnlockAll](UnlockAll/) | Released | Grants engrams, explorer notes, and skills on join, gated per Permissions group by a priority ranked tier system with a Default tier for everyone else. Waits until the character exists before granting, so it covers first spawn, reconnects, and transfer arrivals, and re-grants after a mindwipe or on new character creation. Engrams are per tier, either all or tek only, and the Lost Colony notes unlock for players who own it. Config hot-reloads live. No database. |
+| [WildLimiter](WildLimiter/) | Released | Removes or limits wild creature spawns by blueprint path substring. A blocked list despawns matching wild spawns outright, while caps hold a maximum live count per entry on that map and destroy anything spawning over the line. Per map overrides fully replace the defaults rather than merging with them. Config hot-reloads live. No database. |
 ---
 ## License
 [Kxrse ASA Plugins Non-Commercial License](LICENSE.txt)
