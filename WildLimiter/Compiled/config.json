@@ -1,0 +1,20 @@
+{
+    "Blocked": [
+        "microraptor",
+        "titanoboa"
+    ],
+    "Caps": {
+        "dodo": 40,
+        "raptor": 25
+    },
+    "MapOverrides": {
+        "theisland_wp": {
+            "Blocked": [
+                "microraptor"
+            ],
+            "Caps": {
+                "dodo": 60
+            }
+        }
+    }
+}
