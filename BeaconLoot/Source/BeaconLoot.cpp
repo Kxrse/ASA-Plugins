@@ -95,6 +95,7 @@ Commercial use or resale is not permitted without explicit permission.
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <random>
 #include <cctype>
 #include <sys/stat.h>
@@ -129,7 +130,7 @@ using CrateTable = std::unordered_map<std::string, std::string>;
 
 static std::unordered_map<std::string, LootSet> g_lootSets;
 static std::unordered_map<std::string, CrateTable> g_crates;
-static std::unordered_map<std::string, UClass*> g_classCache;
+static std::unordered_set<std::string> g_failedPaths;
 static bool g_logUnmatched = false;
 
 static time_t g_config_last_modified = 0;
@@ -199,9 +200,8 @@ static std::string ExtractAssetName(const std::string& bpPath)
 
 static UClass* ResolveItemClass(const std::string& path)
 {
-    auto cached = g_classCache.find(path);
-    if (cached != g_classCache.end())
-        return cached->second;
+    if (g_failedPaths.find(path) != g_failedPaths.end())
+        return nullptr;
 
     FString f(path.c_str());
     UClass* itemClass = UVictoryCore::BPLoadClass(f);
@@ -209,7 +209,7 @@ static UClass* ResolveItemClass(const std::string& path)
     if (!itemClass)
     {
         Log::GetLog()->error("[BeaconLoot] BPLoadClass failed for '{}', entry disabled", path);
-        g_classCache[path] = nullptr;
+        g_failedPaths.insert(path);
         return nullptr;
     }
 
@@ -217,11 +217,10 @@ static UClass* ResolveItemClass(const std::string& path)
     if (!itemBase || !itemClass->IsChildOf(itemBase))
     {
         Log::GetLog()->error("[BeaconLoot] '{}' is not a UPrimalItem, entry disabled", path);
-        g_classCache[path] = nullptr;
+        g_failedPaths.insert(path);
         return nullptr;
     }
 
-    g_classCache[path] = itemClass;
     return itemClass;
 }
 
@@ -398,7 +397,7 @@ static bool LoadConfig()
 
     g_lootSets = std::move(newSets);
     g_crates = std::move(newCrates);
-    g_classCache.clear();
+    g_failedPaths.clear();
     g_logUnmatched = newLogUnmatched;
 
     g_config_last_modified = GetFileModTime(g_config_path);
@@ -641,7 +640,7 @@ static void PluginUnload()
 
     g_lootSets.clear();
     g_crates.clear();
-    g_classCache.clear();
+    g_failedPaths.clear();
 
     Log::GetLog()->info("[BeaconLoot] Unloaded");
 }
