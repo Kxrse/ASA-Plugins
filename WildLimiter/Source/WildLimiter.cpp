@@ -395,8 +395,11 @@ static void RunSweep()
         g_tracked = std::move(tracked);
     }
 
-    for (APrimalDinoCharacter* d : destroy)
-        if (d) d->Destroy(false, false);
+    for (size_t i = 0; i < destroy.size(); ++i)
+    {
+        APrimalDinoCharacter* dino = destroy[i];
+        if (dino) dino->Destroy(false, false);
+    }
 
     Log::GetLog()->info("[WildLimiter] Sweep scanned {} dino pawns, destroyed {}, tracking {} capped",
         actors.Num(), destroy.size(), tracked_count);
