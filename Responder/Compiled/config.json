@@ -1,0 +1,10 @@
+{
+    "SenderName": "Server",
+    "MessageColor": "0.0,0.749,1.0,1.0",
+    "CooldownSeconds": 5,
+    "Commands": {
+        "/discord": "Join the Discord at https://discord.gg/example",
+        "/rules": "Server rules are pinned in the Discord rules channel",
+        "/nextwipe": "Full wipes are announced two weeks ahead in the Discord"
+    }
+}
