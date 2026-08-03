@@ -20,7 +20,8 @@ Commercial use or resale is not permitted without explicit permission.
  *     Columns: eos_id VARCHAR(64), map_name VARCHAR(64), home_name VARCHAR(32), x DOUBLE, y DOUBLE, z DOUBLE
  *
  * Commands:
- *   /sethome {name}  save current location, must be on an owned foundation unless the tier allows otherwise
+ *   /sethome {name}  save current location, must be on an owned foundation unless the tier allows otherwise,
+ *                    blocked while mounted, or while laying in a bed or seated in a structure
  *   /home {name}     teleport to a saved home, delayed and revalidated at fire time
  *   /delhome {name}  delete a saved home
  *   /listhome        list saved homes on the current map
@@ -756,12 +757,20 @@ static bool IsMounted(AShooterPlayerController* pc)
     return character->RidingDinoField().Get() != nullptr;
 }
 
+static bool IsSeated(AShooterPlayerController* pc)
+{
+    AActor* ch = pc->BaseGetPlayerCharacter();
+    if (!ch) return false;
+    AShooterCharacter* character = static_cast<AShooterCharacter*>(ch);
+    return character->SeatingStructureField().Get() != nullptr;
+}
+
 static bool GetCharacterPosition(AShooterCharacter* character, double& outX, double& outY, double& outZ)
 {
     if (!character) return false;
     USceneComponent* root = character->RootComponentField().Get();
     if (!root) return false;
-    auto loc = root->RelativeLocationField();
+    const UE::Math::TVector<double> loc = root->ComponentToWorldField().GetTranslation();
     outX = loc.X;
     outY = loc.Y;
     outZ = loc.Z;
@@ -831,7 +840,7 @@ static bool HasOwnedFoundationAt(double px, double py, double pz, int playerTeam
         USceneComponent* sRoot = structure->RootComponentField().Get();
         if (!sRoot) continue;
 
-        auto sLoc = sRoot->RelativeLocationField();
+        const UE::Math::TVector<double> sLoc = sRoot->ComponentToWorldField().GetTranslation();
         const double dx = px - sLoc.X;
         const double dy = py - sLoc.Y;
         const double dz = pz - sLoc.Z;
@@ -1101,7 +1110,7 @@ static bool GetPlayerWorldPosition(AShooterPlayerController* pc, double& outX, d
     USceneComponent* root = posActor->RootComponentField().Get();
     if (!root) return false;
 
-    auto loc = root->RelativeLocationField();
+    const UE::Math::TVector<double> loc = root->ComponentToWorldField().GetTranslation();
     outX = loc.X;
     outY = loc.Y;
     outZ = loc.Z;
@@ -1310,6 +1319,12 @@ static void Cmd_SetHome(AShooterPlayerController* pc, FString* message, int, int
     if (IsMounted(pc))
     {
         Notify(pc, L"You cannot set a home while mounted.");
+        return;
+    }
+
+    if (IsSeated(pc))
+    {
+        Notify(pc, L"You cannot set a home while laying down or seated.");
         return;
     }
 
